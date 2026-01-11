@@ -22,7 +22,7 @@ export async function GET() {
     await prisma.userSchema.create({
       data: {
         userId: session.user.id,
-        schemaJSON: defaultSchema as Prisma.JsonValue,
+        schemaJSON: defaultSchema as Prisma.InputJsonValue,
       },
     })
     return NextResponse.json(defaultSchema)
@@ -44,17 +44,17 @@ export async function POST(request: Request) {
   await prisma.userSchemaVersion.create({
     data: {
       userId: session.user.id,
-      schemaJSON: schema as Prisma.JsonValue,
+      schemaJSON: schema as Prisma.InputJsonValue,
     },
   })
 
   // Update or create schema
   await prisma.userSchema.upsert({
     where: { userId: session.user.id },
-    update: { schemaJSON: schema as Prisma.JsonValue },
+    update: { schemaJSON: schema as Prisma.InputJsonValue },
     create: {
       userId: session.user.id,
-      schemaJSON: schema as Prisma.JsonValue,
+      schemaJSON: schema as Prisma.InputJsonValue,
     },
   })
 
