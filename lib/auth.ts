@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from './prisma'
 import { getDefaultSchema } from './schema'
+import { Prisma } from '@prisma/client'
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -33,7 +34,7 @@ export const authOptions: NextAuthOptions = {
           await prisma.userSchema.create({
             data: {
               userId: user.id,
-              schemaJSON: getDefaultSchema(),
+              schemaJSON: getDefaultSchema() as Prisma.JsonValue,
             }
           })
         }

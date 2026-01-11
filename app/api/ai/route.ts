@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { generateDesignOperations } from '@/lib/ai'
 import { applyOperations, DesignSchema } from '@/lib/schema'
+import { Prisma } from '@prisma/client'
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions)
@@ -31,10 +32,10 @@ export async function POST(request: Request) {
     // Save updated schema
     await prisma.userSchema.upsert({
       where: { userId: session.user.id },
-      update: { schemaJSON: updatedSchema },
+      update: { schemaJSON: updatedSchema as Prisma.JsonValue },
       create: {
         userId: session.user.id,
-        schemaJSON: updatedSchema,
+        schemaJSON: updatedSchema as Prisma.JsonValue,
       },
     })
 
