@@ -26,7 +26,8 @@ export default function SignIn() {
         alert('Sign in failed')
       }
     } catch (error) {
-      console.error('Sign in error:', error)
+      // Only log error message, not the full error object (which might contain PII)
+      console.error('Sign in error:', error instanceof Error ? error.message : 'Unknown error')
       alert('Sign in error')
     } finally {
       setLoading(false)

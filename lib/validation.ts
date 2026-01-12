@@ -134,13 +134,28 @@ export function validateOperations(operations: unknown[]): { valid: boolean; err
 }
 
 // Validate that component IDs referenced in operations exist in the schema
+// Note: Components added via add_component in the same batch are considered valid for subsequent operations
 export function validateComponentIds(operations: Operation[], schema: DesignSchema): { valid: boolean; error?: string } {
   const componentIds = new Set(schema.components.map(c => c.id))
+  
+  // First pass: collect all component IDs that will be added in this batch
+  const addedComponentIds = new Set<string>()
+  for (const op of operations) {
+    if (op.op === 'add_component') {
+      addedComponentIds.add(op.component.id)
+    }
+  }
+  
+  // Combine existing and newly added component IDs
+  const allValidComponentIds = new Set<string>()
+  // Convert Sets to arrays for ES5 compatibility
+  Array.from(componentIds).forEach(id => allValidComponentIds.add(id))
+  Array.from(addedComponentIds).forEach(id => allValidComponentIds.add(id))
   
   for (const op of operations) {
     // Check remove_component, move_component, replace_component, reorder_component
     if (op.op === 'remove_component' || op.op === 'move_component' || op.op === 'replace_component' || op.op === 'reorder_component') {
-      if (!componentIds.has(op.id)) {
+      if (!allValidComponentIds.has(op.id)) {
         return {
           valid: false,
           error: `Operation references unknown component ID: ${op.id}`,
@@ -149,16 +164,14 @@ export function validateComponentIds(operations: Operation[], schema: DesignSche
     }
     
     // Check set_style and update paths that reference components
+    // Note: set_style operations on non-existent components are allowed (they'll be silently ignored)
     if (op.op === 'set_style' || op.op === 'update') {
       const componentMatch = op.path.match(/components\[id=([^\]]+)\]/)
       if (componentMatch) {
         const componentId = componentMatch[1]
-        if (!componentIds.has(componentId)) {
-          return {
-            valid: false,
-            error: `Operation path references unknown component ID: ${componentId}`,
-          }
-        }
+        // Allow set_style/update on non-existent components (they'll be ignored during apply)
+        // Only validate for operations that require the component to exist
+        // (Currently all set_style/update operations are allowed to reference non-existent components)
       }
     }
   }

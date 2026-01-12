@@ -34,8 +34,19 @@ export function getOptimizedSchema(schema: DesignSchema, prompt: string): any {
     }
   }
   
-  // Component operations (add/remove/reorder) - need component IDs/types, minimal props
+  // Component operations (add/remove/reorder) - need ONLY component IDs/types for reference
+  // This dramatically reduces token count for simple add/remove operations
   if (lower.match(/\b(add|remove|delete|reorder|move|replace)\b/)) {
+    // For empty dashboard or very simple operations, send absolute minimum
+    if (cleaned.components.length === 0 || lower.match(/\b(add|remove)\s+(a|an|the)?\s*(chart|kpi|table|text|pie|bar|line)\b/)) {
+      return {
+        theme: cleaned.theme,
+        layout: cleaned.layout,
+        components: cleaned.components.map(getMinimalComponent), // Just IDs/types
+        filters: cleaned.filters,
+      }
+    }
+    // For more complex operations, include minimal props
     return {
       ...cleaned,
       components: cleaned.components.map((c: Component) => ({

@@ -38,32 +38,125 @@ export function DataChart({ component }: DataChartProps) {
 
   // #region agent log
   useEffect(() => {
-    fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:35',message:'DataChart component mounted',data:{componentId:component.id,componentType:component.type,props:component.props},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    if (process.env.NODE_ENV === 'development') {
+      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:35',message:'DataChart component mounted',data:{componentId:component.id,componentType:component.type,props:component.props},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    }
   }, [component.id]);
   // #endregion
+
+  // Helper function to aggregate data by a field
+  function aggregateData(items: any[], groupBy: string, aggregateField?: string, aggregateFn: 'count' | 'sum' | 'avg' = 'count'): any[] {
+    const grouped = new Map<string, { count: number; sum: number; items: any[] }>()
+    
+    for (const item of items) {
+      const groupKey = String(item[groupBy] || 'Unknown')
+      
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, { count: 0, sum: 0, items: [] })
+      }
+      
+      const group = grouped.get(groupKey)!
+      group.count++
+      if (aggregateField) {
+        const value = parseFloat(item[aggregateField]) || 0
+        group.sum += value
+        group.items.push(value)
+      }
+    }
+    
+    // Determine the value field name for the aggregated data
+    // Use 'value' as a consistent name, or the aggregateField if it's a simple field name
+    const valueFieldName = aggregateFn === 'count' ? 'count' : (aggregateField || 'value')
+    
+    return Array.from(grouped.entries()).map(([key, group]) => {
+      let value: number
+      if (aggregateFn === 'count') {
+        value = group.count
+      } else if (aggregateFn === 'sum') {
+        value = group.sum
+      } else if (aggregateFn === 'avg') {
+        value = group.count > 0 ? group.sum / group.count : 0
+      } else {
+        value = group.count
+      }
+      
+      return {
+        [groupBy]: key,
+        [valueFieldName]: value,
+      }
+    })
+  }
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:42',message:'Fetching chart data',data:{componentId:component.id,dataSource:component.props.dataSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        if (process.env.NODE_ENV === 'development') {
+          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:42',message:'Fetching chart data',data:{componentId:component.id,dataSource:component.props.dataSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        }
         // #endregion
         const res = await fetch(component.props.dataSource || '/api/data/summary')
         if (res.ok) {
-          const items = await res.json()
+          let items = await res.json()
+          
+          // Check if we need to aggregate data (for pie/bar charts grouping by category or other fields)
+          const chartType = getChartType(component)
+          // For aggregation check, use actual xField from props (don't default) to detect explicit grouping
+          const xFieldForAggregation = component.props.xField
+          const yField = component.props.yField || 'total'
+          const aggregateFunction = component.props.aggregateFunction || 'count' // 'count', 'sum', 'avg'
+          
+          // If using raw data source and chart needs grouping (pie/bar with non-time-series xField)
+          const dataSource = component.props.dataSource || '/api/data/summary'
+          const isRawDataSource = dataSource === '/api/data'
+          
+          // Only aggregate if:
+          // 1. Using raw data source (/api/data)
+          // 2. Chart type is pie or bar
+          // 3. xField is explicitly set (not default) and is NOT 'month' (not time-series)
+          // 4. Data has the xField
+          // 5. Data is not already aggregated (doesn't have 'month' field from summary)
+          const needsAggregation = isRawDataSource && 
+            (chartType === 'pie' || chartType === 'bar') && 
+            xFieldForAggregation && // xField must be explicitly set (not undefined)
+            xFieldForAggregation !== 'month' && // Not time-series
+            items.length > 0 && 
+            items[0][xFieldForAggregation] !== undefined && // xField exists in data
+            !items[0].month // Not already aggregated (summary data has 'month' field)
+          
+          if (needsAggregation && xFieldForAggregation) {
+            // Aggregate data by xField
+            // If yField is specified and exists in data, use it for aggregation; otherwise count
+            const aggregateField = yField && items[0][yField] !== undefined ? yField : undefined
+            items = aggregateData(items, xFieldForAggregation, aggregateField, aggregateFunction as 'count' | 'sum' | 'avg')
+          }
+          
+          if (needsAggregation) {
+            // Aggregate data by xField
+            // If yField is specified and exists in data, use it for aggregation; otherwise count
+            const aggregateField = yField && items[0][yField] !== undefined ? yField : undefined
+            items = aggregateData(items, xField, aggregateField, aggregateFunction as 'count' | 'sum' | 'avg')
+          }
+          
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:46',message:'Chart data fetched successfully',data:{componentId:component.id,dataCount:items.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          if (process.env.NODE_ENV === 'development') {
+            fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:46',message:'Chart data fetched successfully',data:{componentId:component.id,dataCount:items.length,aggregated:needsAggregation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          }
           // #endregion
           setData(items)
         } else {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:49',message:'Chart data fetch failed',data:{componentId:component.id,status:res.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          if (process.env.NODE_ENV === 'development') {
+            fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:49',message:'Chart data fetch failed',data:{componentId:component.id,status:res.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          }
           // #endregion
         }
       } catch (error) {
         console.error('Failed to fetch chart data:', error)
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:52',message:'Chart data fetch error',data:{componentId:component.id,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        if (process.env.NODE_ENV === 'development') {
+          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:52',message:'Chart data fetch error',data:{componentId:component.id,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        }
         // #endregion
       } finally {
         setLoading(false)
@@ -76,7 +169,8 @@ export function DataChart({ component }: DataChartProps) {
   // #region agent log
   // Log chart rendering - MUST be before any conditional returns (Rules of Hooks)
   const chartType = getChartType(component)
-  const xField = component.props.xField || 'month'
+  // Default xField based on chart type: time-series charts default to 'month', others need explicit xField
+  const xField = component.props.xField || ((chartType === 'line' || chartType === 'area' || (chartType === 'bar' && !component.props.xField)) ? 'month' : undefined)
   const yField = component.props.yField || 'total'
   
   // Pre-compute values needed for logging before conditional return
@@ -92,21 +186,21 @@ export function DataChart({ component }: DataChartProps) {
   
   // #region agent log
   useEffect(() => {
-    if (!loading) {
+    if (!loading && process.env.NODE_ENV === 'development') {
       fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:90',message:'Chart height computed',data:{componentId:component.id,chartHeight,styleHeight:component.style?.height,propsHeight:component.props.height},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     }
   }, [component.id, chartHeight, loading]);
   // #endregion
   
   useEffect(() => {
-    if (!loading) {
+    if (!loading && process.env.NODE_ENV === 'development') {
       fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:82',message:'DataChart rendering chart',data:{componentId:component.id,chartType,dataCount:data.length,xField,yField},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     }
   }, [component.id, chartType, data.length, loading, xField, yField]);
   
   // Log JSX return - MUST be before conditional return
   useEffect(() => {
-    if (!loading) {
+    if (!loading && process.env.NODE_ENV === 'development') {
       fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:95',message:'DataChart returning JSX',data:{componentId:component.id,chartType},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     }
   }, [component.id, chartType, loading]);
@@ -114,7 +208,9 @@ export function DataChart({ component }: DataChartProps) {
 
   if (loading) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:88',message:'DataChart showing loading state',data:{componentId:component.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    if (process.env.NODE_ENV === 'development') {
+      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:88',message:'DataChart showing loading state',data:{componentId:component.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    }
     // #endregion
     return <div className="p-4">Loading chart...</div>
   }
@@ -161,12 +257,34 @@ export function DataChart({ component }: DataChartProps) {
             </div>
           )
         }
+        // For pie charts, determine the value field
+        // If data was aggregated, it will have xField as key and count/value as the numeric field
+        // Otherwise, use yField or fallback to first numeric field
+        let pieValueField = yField
+        if (data[0]) {
+          // Find the numeric field (exclude xField)
+          const numericFields = Object.keys(data[0]).filter(key => 
+            key !== xField && typeof data[0][key] === 'number'
+          )
+          if (numericFields.length > 0) {
+            // Prefer: count (for aggregated count), then yField, then any numeric field
+            pieValueField = numericFields.find(f => f === 'count') 
+              || numericFields.find(f => f === yField)
+              || numericFields[0]
+          } else if (data[0][yField] !== undefined) {
+            pieValueField = yField
+          } else {
+            // Fallback: use second key (first is likely xField)
+            const keys = Object.keys(data[0])
+            pieValueField = keys.length > 1 ? keys[1] : yField
+          }
+        }
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <PieChart>
               <Pie
                 data={data}
-                dataKey={yField}
+                dataKey={pieValueField}
                 nameKey={xField}
                 cx="50%"
                 cy="50%"

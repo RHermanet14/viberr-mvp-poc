@@ -242,7 +242,9 @@ function setNestedValue(obj: any, path: string, value: any) {
         if (component) {
           current = component
         } else {
-          throw new Error(`Component ${componentId} not found`)
+          // Silently ignore set_style/update operations on non-existent components
+          // This allows vague requests to style components that may not exist
+          return
         }
       }
     } else {

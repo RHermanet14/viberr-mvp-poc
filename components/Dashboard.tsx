@@ -142,12 +142,16 @@ export function Dashboard() {
       if (res.ok) {
         const { schema: updatedSchema } = await res.json()
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:142',message:'API response received',data:{componentCount:updatedSchema.components?.length,componentIds:updatedSchema.components?.map((c:any)=>c.id),componentTypes:updatedSchema.components?.map((c:any)=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        if (process.env.NODE_ENV === 'development') {
+          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:142',message:'API response received',data:{componentCount:updatedSchema.components?.length,componentIds:updatedSchema.components?.map((c:any)=>c.id),componentTypes:updatedSchema.components?.map((c:any)=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        }
         // #endregion
         // Apply new schema (previousSchema still has the backup)
         setSchema(updatedSchema)
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:144',message:'setSchema called',data:{componentCount:updatedSchema.components?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        if (process.env.NODE_ENV === 'development') {
+          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:144',message:'setSchema called',data:{componentCount:updatedSchema.components?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        }
         // #endregion
         // Note: previousSchema will be updated only after successful render
         // If runtime error occurs, ErrorBoundary will roll back to previousSchema
@@ -243,7 +247,9 @@ export function Dashboard() {
   // Log schema changes - MUST be before any conditional returns (Rules of Hooks)
   useEffect(() => {
     if (schema) {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:203',message:'Dashboard render with schema',data:{componentCount:schema.components.length,componentIds:schema.components.map(c=>c.id),componentTypes:schema.components.map(c=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      if (process.env.NODE_ENV === 'development') {
+        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:203',message:'Dashboard render with schema',data:{componentCount:schema.components.length,componentIds:schema.components.map(c=>c.id),componentTypes:schema.components.map(c=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      }
     }
   }, [schema]);
   // #endregion
@@ -296,8 +302,8 @@ export function Dashboard() {
   }
 
   return (
-    <div style={themeStyles} className="min-h-screen">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+    <div style={{...themeStyles, overflowX: 'hidden', maxWidth: '100vw'}} className="min-h-screen">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2" style={{overflowX: 'hidden', maxWidth: '100%'}}>
         <div className="flex items-center justify-between mb-3">
           <h1 
             className="text-xl sm:text-2xl font-bold"
@@ -417,6 +423,8 @@ export function Dashboard() {
             className="pt-2"
             style={{
               display: 'grid',
+              overflowX: 'hidden',
+              maxWidth: '100%',
               gridTemplateColumns: `repeat(${schema.layout.columns}, 1fr)`,
               gap: `${schema.layout.gap}px`,
               gridAutoFlow: 'row',
@@ -425,7 +433,9 @@ export function Dashboard() {
             {schema.components.map((component, index) => {
               // #region agent log
               const duplicateIds = schema.components.filter(c => c.id === component.id);
-              fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:337',message:'Mapping component for render',data:{componentId:component.id,componentType:component.type,index,totalComponents:schema.components.length,duplicateCount:duplicateIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              if (process.env.NODE_ENV === 'development') {
+                fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:337',message:'Mapping component for render',data:{componentId:component.id,componentType:component.type,index,totalComponents:schema.components.length,duplicateCount:duplicateIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+              }
               // #endregion
               return (
                 <ComponentRenderer
@@ -494,7 +504,9 @@ function ComponentRenderer({
   // Wrap component rendering in error boundary
   try {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:379',message:'ComponentRenderer switch entry',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    if (process.env.NODE_ENV === 'development') {
+      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:379',message:'ComponentRenderer switch entry',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    }
     // #endregion
     switch (component.type) {
       case 'table':
@@ -513,7 +525,9 @@ function ComponentRenderer({
       case 'histogram':
       case 'composed_chart':
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:396',message:'Chart case matched, rendering DataChart',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        if (process.env.NODE_ENV === 'development') {
+          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:396',message:'Chart case matched, rendering DataChart',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        }
         // #endregion
         return (
           <div style={style}>

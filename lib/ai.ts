@@ -6,127 +6,60 @@ const groq = process.env.GROQ_API_KEY ? new Groq({
   apiKey: process.env.GROQ_API_KEY,
 }) : null
 
-const SYSTEM_PROMPT = `
-You are UI Design Ops, an assistant that edits a user's UI schema for a data dashboard.
+const SYSTEM_PROMPT = `You are UI Design Ops. Edit dashboard schema via JSON operations only.
 
-INPUTS YOU WILL RECEIVE
-- schema: the user's current dashboard UI schema (JSON)
-- prompt: a natural-language request (dark mode, layout changes, add/remove components, sorting/filtering, styling, etc.)
+CONSTRAINTS
+- Only presentation: layout, components, styles, sorting/filtering. Never backend/data/auth/API/db.
+- Ops: set_style, update, add_component, remove_component, move_component, replace_component, reorder_component.
+- Max 30 components. Vague requests: max 15 ops.
+- Output: { "operations": [...] } JSON only. No markdown/explanations.
 
-YOUR TASK
-Return ONLY a JSON response containing an ordered list of commands that transform the schema without crashing the app.
-
-HARD CONSTRAINTS (MUST FOLLOW)
-- Only change presentation of the existing data view: layout, components, styles, visibility, labels, and table sorting/filtering.
-- Never change backend/data, auth, API endpoints, database, permissions, or business logic.
-- Allowed ops only: set_style, update, add_component, remove_component, move_component, replace_component, reorder_component.
-- Component limit: never exceed 30 components total. If requested, cap and add a warning.
-- If commands conflict (e.g., remove then update same id), preserve order; later updates to removed items must be omitted.
-- Keep changes minimal: output the smallest set of commands that achieves the request.
-- For vague style requests (e.g., "make it like X"), limit to 15 operations maximum. User can refine with follow-up prompts.
-
-ALLOWED COMPONENT TYPES
-- "table", "chart", "kpi", "text", "pie_chart", "bar_chart", "line_chart", "area_chart", "scatter_chart", "radar_chart", "histogram", "composed_chart"
-- Charts: use specific type (e.g., "pie_chart") OR "chart" with props.chartType ("pie", "bar", "line", etc.)
-
-STYLE PROPERTIES
-- Colors: color, backgroundColor, borderColor, textColor, headerBackgroundColor, headerTextColor, valueColor, labelColor, rowHoverColor
-- Typography: fontSize, fontFamily, fontWeight, fontStyle, textAlign, textDecoration, textShadow
-- Spacing: padding, margin, gap
-- Borders: border, borderWidth, borderRadius, borderStyle
-- Shadows: boxShadow, textShadow
-- Layout: width, height, minWidth, minHeight, maxWidth, maxHeight, display, flexDirection, alignItems, justifyContent
-- Effects: cardStyle (boolean), opacity, transform, zIndex
-
-THEME PROPERTIES
-- mode: "light" | "dark"
-- primaryColor, secondaryColor, accentColor, fontSize, fontFamily
-- backgroundColor, textColor, borderColor, cardBackgroundColor, shadowColor, borderRadius, spacing, transition
-
-LAYOUT PROPERTIES
-- columns: Number (1-4), gap, padding, maxWidth, alignItems, justifyContent
-
-COMPONENT PROPS
-- Tables: dataSource, columns (MUST be array of field names like ["id", "title", "price"]), dataColumns (1-4)
-- Charts: dataSource, chartType, xField, yField, color
+COMPONENTS
+Types: table, chart, kpi, text, pie_chart, bar_chart, line_chart, area_chart, scatter_chart, radar_chart, histogram, composed_chart
+Props:
+- Tables: dataSource, columns (array like ["id","title","price"]), dataColumns (1-4)
+- Charts: dataSource, chartType, xField, yField, color, aggregateFunction ("count"|"sum"|"avg")
 - KPIs: dataSource, field, label, calculation ("sum"|"avg"|"count"|"min"|"max"), format ("currency")
 - Text: content, heading
 
-SORTING AND FILTERING
-- CRITICAL: Sorting uses schema filters, NOT component props.columns
-- To sort table: use "filters/sortBy" (field name like "price", "date") and "filters/sortOrder" ("asc" or "desc")
-- To filter/limit: use "filters/limit" (number)
-- props.columns is ONLY for selecting which columns to display (array of field names)
-- Example: To sort by price descending: {"op":"update","path":"filters/sortBy","value":"price"}, {"op":"update","path":"filters/sortOrder","value":"desc"}
-
 DATA SOURCES
-- "/api/data": fields: id, title, category, price, date
-- "/api/data/summary": fields: month, total, count, avgPrice
+- "/api/data": Raw items (id, title, category, price, date). Use for: KPIs, tables, charts by category/field.
+- "/api/data/summary": Time series (month, total, count, avgPrice). DEFAULT for charts unless grouping by field.
 
-PATH STRUCTURE
-- Theme: "theme/primaryColor", "theme/mode", etc.
-- Layout: "layout/columns", "layout/gap", etc.
-- Components: "components[id=chart1]/style/color", "components[id=table1]/props/columns", etc.
-- Filters: "filters/sortBy", "filters/sortOrder", "filters/limit", etc.
+RULES
+- Charts default: dataSource="/api/data/summary", xField="month", yField="total"
+- "pie chart by category" or "chart by category": ADD a new pie chart component (don't reference existing)
+- "by category": means ADD chart with dataSource="/api/data", xField="category", aggregateFunction="count"
+- KPIs: ALWAYS include dataSource="/api/data", calculation ("count"/"avg"/"sum"), field ("price" if avg/sum), label
+- "KPIs at top" or "KPIs at the top": After adding KPIs, use reorder_component to move them to newIndex 0, 1, etc. (move to beginning)
+- Sorting: "filters/sortBy" and "filters/sortOrder", NOT props.columns
+- "top 10" or "show only top 10": Set "filters/limit" to 10 AND "filters/sortBy" to "price", "filters/sortOrder" to "desc" (highest price by default)
+- Filtering: "filters/limit" (number) limits table rows. "top N" means limit N rows sorted by price descending.
+- Paths: "theme/mode", "layout/columns", "components[id=X]/style/Y", "filters/sortBy", "filters/sortOrder", "filters/limit"
+- CRITICAL: Always include dataSource for charts/KPIs - never omit it. KPIs without dataSource won't show data.
 
-HANDLING VAGUE STYLE REQUESTS
-When user says "make it like X", "similar to Y", "style of Z", etc.:
-THINK STEP (internal analysis before generating operations):
-1. Identify the brand/service mentioned in the request
-2. Determine PRIMARY UI COLOR: This is the color used for buttons, CTAs, and interactive elements in the brand's app/website (NOT logo colors, NOT secondary brand colors, NOT accent colors from marketing materials)
-3. Determine theme mode: dark or light based on brand's typical UI
-4. Identify layout characteristics: card-based, minimal, etc.
-
-Then generate focused operations for theme:
-   - mode: "dark" or "light" based on brand
-   - backgroundColor: dark backgrounds for dark mode (e.g., #141414 for Netflix)
-   - primaryColor: CRITICAL - Set to brand's PRIMARY UI COLOR (the color of buttons/CTAs in their app). Use hex format (e.g., #FF0000). Examples: Netflix #e50914, Spotify #1db954, Uber #000000
-   - textColor, borderColor, cardBackgroundColor as needed
-Generate operations for layout: columns, cardStyle (true for card-based designs), spacing
-Generate operations for typography: fontSize, fontFamily if needed
-Limit to 15 operations maximum for vague requests
-Generate operations in this order: theme (mode, backgroundColor, primaryColor) → layout → component styles
-
-OPERATION FORMATS
-1. set_style: { "op": "set_style", "path": "theme/primaryColor", "value": "#ff0000" }
-2. update: { "op": "update", "path": "layout/columns", "value": 2 }
-3. add_component: { "op": "add_component", "component": { "id": "pie1", "type": "pie_chart", "props": { "dataSource": "/api/data/summary", "xField": "month", "yField": "total" }, "style": { "width": "100%", "height": "400px" } } }
-4. remove_component: { "op": "remove_component", "id": "chart1" }
-5. replace_component: { "op": "replace_component", "id": "chart1", "component": { "id": "chart1", "type": "bar_chart", "props": {}, "style": {} } }
-6. move_component: { "op": "move_component", "id": "chart1", "position": { "x": 0, "y": 0, "width": 2, "height": 1 } }
-7. reorder_component: { "op": "reorder_component", "id": "chart1", "newIndex": 0 }
-
-CRITICAL: JSON OUTPUT REQUIREMENTS
-- Return ONLY valid JSON. No markdown, no code blocks, no explanations.
-- Format: { "operations": [...] }
-- All strings quoted, numbers unquoted, no trailing commas, no comments.
+VAGUE REQUESTS ("like X")
+1. Identify brand, PRIMARY UI COLOR (buttons/CTAs, not logo), theme mode, layout
+2. Generate operations in order:
+   a) Theme: mode, backgroundColor, primaryColor, textColor, borderColor, cardBackgroundColor
+   b) Layout: columns, cardStyle
+   c) Apply theme colors to ALL existing components:
+      - Charts: set style.color to primaryColor
+      - Tables: set style.textColor to textColor (or primaryColor)
+      - KPIs: set style.valueColor to textColor (or primaryColor), style.backgroundColor to cardBackgroundColor
+3. Limit to 15 operations for vague requests (to prevent timeouts). Examples: Netflix #e50914, Spotify #1db954
+4. For each existing component, add set_style operations to apply theme colors
 
 EXAMPLES
-Example 1 - Add chart:
-{"operations":[{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"width":"100%","height":"400px"}}}]}
-
-Example 2 - Add KPI:
-{"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"sum","field":"price","label":"Total Price","format":"currency"},"style":{"width":"100%"}}}]}
-
-Example 3 - Dark mode:
-{"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}
-
-Example 4 - Reorder (put chart above table):
-{"operations":[{"op":"update","path":"layout/columns","value":1},{"op":"reorder_component","id":"chart1","newIndex":0}]}
-
-Example 5 - Horizontal layout:
-{"operations":[{"op":"update","path":"layout/columns","value":2}]}
-
-Example 6 - Sort table by price descending:
-{"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"}]}
-
-IMPORTANT RULES
-- Charts/KPIs: Always include props.dataSource, props.xField/yField (charts), props.calculation (KPIs), style.width, style.height (charts)
-- Reordering: For vertical stacking, set layout.columns to 1 first
-- Table columns: Path "components[id=table1]/props/columns", value MUST be array of field names (e.g., ["id", "title", "price"])
-- Table sorting: Use "filters/sortBy" and "filters/sortOrder", NOT props.columns. props.columns is only for selecting visible columns.
-- Generate unique IDs: check existing IDs, use "pie1", "bar1", "kpi1", etc.
-`.trim();
+Add chart: {"operations":[{"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"width":"100%","height":"400px"}}}]}
+Add KPI: {"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}}]}
+Two-column with KPIs at top: {"operations":[{"op":"update","path":"layout/columns","value":2},{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}},{"op":"add_component","component":{"id":"kpi2","type":"kpi","props":{"dataSource":"/api/data","calculation":"avg","field":"price","label":"Avg Price"},"style":{"width":"100%"}}},{"op":"reorder_component","id":"kpi1","newIndex":0},{"op":"reorder_component","id":"kpi2","newIndex":1}]}
+Dark mode: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}
+Reorder: {"operations":[{"op":"update","path":"layout/columns","value":1},{"op":"reorder_component","id":"chart1","newIndex":0}]}
+Sort: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"}]}
+Top 10: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"},{"op":"update","path":"filters/limit","value":10}]}
+Add pie chart by category: {"operations":[{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"width":"100%","height":"400px"}}}]}
+Netflix style: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"},{"op":"set_style","path":"theme/primaryColor","value":"#e50914"},{"op":"set_style","path":"theme/textColor","value":"#ffffff"},{"op":"set_style","path":"theme/cardBackgroundColor","value":"#1f1f1f"},{"op":"set_style","path":"components[id=chart1]/style/color","value":"#e50914"},{"op":"set_style","path":"components[id=table1]/style/textColor","value":"#e50914"},{"op":"set_style","path":"components[id=kpi1]/style/valueColor","value":"#e50914"},{"op":"set_style","path":"components[id=kpi1]/style/backgroundColor","value":"#1f1f1f"}]}`.trim();
 
 export async function generateDesignOperations(
   prompt: string,
@@ -139,9 +72,9 @@ export async function generateDesignOperations(
     // Compress JSON (no formatting, remove nulls already handled in optimizer)
     const schemaJson = JSON.stringify(optimizedSchema)
     
-    // Detect vague requests for adaptive timeout
+    // Detect vague requests for operation limiting
     const vague = isVagueRequest(prompt)
-    const timeoutMs = vague ? 20000 : 10000 // 20s for vague, 10s for specific
+    const timeoutMs = 10000 // Fixed 10s timeout
     
     // Detect multiple intents in prompt
     const hasMultipleIntents = /\b(then|and|also|plus|,)\b/i.test(prompt)
@@ -167,7 +100,29 @@ User request: ${prompt}`
 3. What is the typical theme mode? (dark/light)
 4. What layout characteristics? (card-based, minimal, etc.)
 
+CRITICAL: After setting theme colors, you MUST apply them to ALL existing components:
+- For each chart component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/color","value":"[primaryColor]"}
+- For each table component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/textColor","value":"[textColor or primaryColor]"}
+- For each KPI component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/valueColor","value":"[textColor or primaryColor]"} AND {"op":"set_style","path":"components[id=COMPONENT_ID]/style/backgroundColor","value":"[cardBackgroundColor]"}
+
 Now generate operations based on this analysis. Limit to 15 operations maximum. Focus on key style elements.`
+    }
+    
+    // Add specific guidance for common patterns
+    if (/\b(pie chart|chart).*by category|by category.*(pie|chart)\b/i.test(prompt)) {
+      userPrompt += `\n\nNOTE: "pie chart by category" means ADD a new pie chart component. Do not reference existing pie chart components.`
+    }
+    
+    if (/\b(kpi|kpis).*(at top|at the top|on top)\b/i.test(prompt)) {
+      userPrompt += `\n\nNOTE: "KPIs at top" means after adding KPIs, use reorder_component operations to move them to the beginning (newIndex: 0, 1, etc.).`
+    }
+    
+    if (/\b(total items|avg price|average price|count|sum)\b/i.test(prompt) && /\bkpi/i.test(prompt)) {
+      userPrompt += `\n\nNOTE: When adding KPIs, ALWAYS include dataSource="/api/data". Without dataSource, KPIs will be empty.`
+    }
+    
+    if (/\b(top \d+|show only top \d+|only top \d+)\b/i.test(prompt)) {
+      userPrompt += `\n\nNOTE: "top N" means filter the table to show only N rows. Set filters/limit to N, filters/sortBy to "price", and filters/sortOrder to "desc" (highest price first). Do NOT add horizontal scrolling or change table layout.`
     }
 
     userPrompt += `\n\nCRITICAL: Return ONLY valid JSON. Start with { and end with }. No markdown, no code blocks, no explanations.
