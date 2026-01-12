@@ -1,8 +1,58 @@
 export interface Component {
   id: string
-  type: 'table' | 'chart' | 'kpi' | 'text'
+  type: 'table' | 'chart' | 'kpi' | 'text' | 'pie_chart' | 'bar_chart' | 'line_chart' | 'area_chart' | 'scatter_chart' | 'radar_chart' | 'histogram' | 'composed_chart'
   props: Record<string, any>
-  style?: Record<string, any>
+  style?: {
+    // Colors
+    color?: string
+    backgroundColor?: string
+    borderColor?: string
+    textColor?: string
+    headerBackgroundColor?: string
+    headerTextColor?: string
+    valueColor?: string
+    labelColor?: string
+    rowHoverColor?: string
+    // Typography
+    fontSize?: string
+    fontFamily?: string
+    fontWeight?: string | number
+    fontStyle?: 'normal' | 'italic' | 'oblique'
+    textAlign?: 'left' | 'center' | 'right' | 'justify'
+    textDecoration?: 'none' | 'underline' | 'overline' | 'line-through'
+    // Spacing
+    padding?: string | number
+    margin?: string | number
+    gap?: string | number
+    // Borders
+    border?: string
+    borderWidth?: string | number
+    borderRadius?: string | number
+    borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none'
+    // Shadows
+    boxShadow?: string
+    textShadow?: string
+    // Layout
+    width?: string | number
+    height?: string | number
+    minWidth?: string | number
+    minHeight?: string | number
+    maxWidth?: string | number
+    maxHeight?: string | number
+    // Display
+    display?: 'block' | 'inline' | 'flex' | 'grid' | 'none'
+    flexDirection?: 'row' | 'column' | 'row-reverse' | 'column-reverse'
+    alignItems?: 'flex-start' | 'flex-end' | 'center' | 'stretch' | 'baseline'
+    justifyContent?: 'flex-start' | 'flex-end' | 'center' | 'space-between' | 'space-around' | 'space-evenly'
+    // Card styling
+    cardStyle?: boolean
+    // Opacity
+    opacity?: number
+    // Transform
+    transform?: string
+    // Z-index
+    zIndex?: number
+  }
   position?: { x: number; y: number; width: number; height: number }
 }
 
@@ -10,18 +60,39 @@ export interface DesignSchema {
   theme: {
     mode: 'light' | 'dark'
     primaryColor: string
+    secondaryColor?: string
+    accentColor?: string
     fontSize: string
     fontFamily: string
+    backgroundColor?: string
+    textColor?: string
+    borderColor?: string
+    cardBackgroundColor?: string
+    shadowColor?: string
+    // Additional theme options
+    borderRadius?: string | number
+    spacing?: number
+    transition?: string
   }
   layout: {
     columns: number
     gap: number
+    padding?: number | string
+    maxWidth?: string | number
+    alignItems?: 'flex-start' | 'flex-end' | 'center' | 'stretch'
+    justifyContent?: 'flex-start' | 'flex-end' | 'center' | 'space-between' | 'space-around' | 'space-evenly'
   }
   components: Component[]
   filters?: {
     sortBy?: string
     sortOrder?: 'asc' | 'desc'
     limit?: number
+    search?: string
+    category?: string
+    dateRange?: {
+      start?: string
+      end?: string
+    }
   }
 }
 
@@ -76,8 +147,9 @@ export type Operation =
   | { op: 'update'; path: string; value: any }
   | { op: 'add_component'; component: Component }
   | { op: 'remove_component'; id: string }
-  | { op: 'move_component'; id: string; position: { x: number; y: number } }
+  | { op: 'move_component'; id: string; position: { x: number; y: number; width?: number; height?: number } }
   | { op: 'replace_component'; id: string; component: Component }
+  | { op: 'reorder_component'; id: string; newIndex: number }
 
 export function applyOperations(schema: DesignSchema, operations: Operation[]): DesignSchema {
   let result = JSON.parse(JSON.stringify(schema)) as DesignSchema
@@ -104,13 +176,25 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
         case 'move_component':
           const moveComp = result.components.find(c => c.id === operation.id)
           if (moveComp) {
-            moveComp.position = operation.position
+            moveComp.position = {
+              x: operation.position.x,
+              y: operation.position.y,
+              width: operation.position.width || moveComp.position?.width || 1,
+              height: operation.position.height || moveComp.position?.height || 1,
+            }
           }
           break
         case 'replace_component':
           const index = result.components.findIndex(c => c.id === operation.id)
           if (index !== -1) {
             result.components[index] = operation.component
+          }
+          break
+        case 'reorder_component':
+          const reorderIndex = result.components.findIndex(c => c.id === operation.id)
+          if (reorderIndex !== -1 && operation.newIndex >= 0 && operation.newIndex < result.components.length) {
+            const [component] = result.components.splice(reorderIndex, 1)
+            result.components.splice(operation.newIndex, 0, component)
           }
           break
       }

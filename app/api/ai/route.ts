@@ -25,9 +25,17 @@ export async function POST(request: Request) {
 
     // Generate operations from AI
     const operations = await generateDesignOperations(prompt, schema as DesignSchema)
+    
+    // Log operations for debugging
+    console.log('Generated operations:', JSON.stringify(operations, null, 2))
+    console.log('Number of operations:', operations.length)
 
     // Apply operations
     const updatedSchema = applyOperations(schema as DesignSchema, operations)
+    
+    // Log component count for debugging
+    console.log('Components before:', schema.components.length)
+    console.log('Components after:', updatedSchema.components.length)
 
     // Save updated schema
     await prisma.userSchema.upsert({

@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { DesignSchema } from '@/lib/schema'
 
 interface AIPromptProps {
   onPrompt: (prompt: string) => Promise<void>
+  schema?: DesignSchema | null
 }
 
-export function AIPrompt({ onPrompt }: AIPromptProps) {
+export function AIPrompt({ onPrompt, schema }: AIPromptProps) {
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -23,6 +25,14 @@ export function AIPrompt({ onPrompt }: AIPromptProps) {
     }
   }
 
+  const isDark = schema?.theme.mode === 'dark'
+  const inputStyle = {
+    backgroundColor: isDark ? '#2d2d2d' : '#ffffff',
+    color: isDark ? '#ffffff' : '#000000',
+    borderColor: isDark ? '#4a4a4a' : '#d1d5db',
+  }
+  const textColor = isDark ? '#9ca3af' : '#6b7280'
+
   return (
     <form onSubmit={handleSubmit} className="mb-6">
       <div className="flex gap-2">
@@ -31,7 +41,8 @@ export function AIPrompt({ onPrompt }: AIPromptProps) {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Try: 'Make it dark mode, bigger text, show top 10 by revenue, add a bar chart by month'"
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          style={inputStyle}
           disabled={loading}
         />
         <button
@@ -42,7 +53,7 @@ export function AIPrompt({ onPrompt }: AIPromptProps) {
           {loading ? 'Processing...' : 'Apply'}
         </button>
       </div>
-      <p className="mt-2 text-sm text-gray-600">
+      <p className="mt-2 text-sm" style={{ color: textColor }}>
         Examples: "Dark mode", "Bigger font", "Two columns", "Add pie chart", "Sort by price"
       </p>
     </form>
