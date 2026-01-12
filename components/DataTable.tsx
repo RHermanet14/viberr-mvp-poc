@@ -55,7 +55,14 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
     return <div className="p-4">Loading table...</div>
   }
 
-  const columns = component.props.columns || Object.keys(data[0] || {})
+  // Ensure columns is always an array (safety check)
+  let columns = component.props.columns
+  if (!Array.isArray(columns)) {
+    // If columns is not an array, fall back to data keys or empty array
+    columns = data.length > 0 ? Object.keys(data[0]) : []
+    console.warn('Table columns prop must be an array. Falling back to data keys.')
+  }
+  
   const dataColumns = component.props.dataColumns || 1 // Number of columns to split data into (1 = single column, 2 = two columns, etc.)
 
   // Split data into chunks for multi-column layout
@@ -86,11 +93,20 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
   const textColor = component.style?.textColor || theme?.textColor
   const cardStyle = component.style?.cardStyle === true
 
+  // Calculate max height - use component style maxHeight if provided, otherwise use viewport-based default
+  const maxHeight = component.style?.maxHeight 
+    ? (typeof component.style.maxHeight === 'string' 
+        ? component.style.maxHeight 
+        : `${component.style.maxHeight}px`)
+    : 'calc(100vh - 300px)' // Default: viewport height minus space for header/controls
+
   return (
     <div 
-      className="overflow-hidden"
       style={{
         ...tableStyle,
+        maxHeight: maxHeight,
+        overflowY: 'auto',
+        overflowX: 'auto',
         ...(cardStyle && {
           boxShadow: tableStyle.boxShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
           borderRadius: tableStyle.borderRadius || '0.75rem',
@@ -112,12 +128,17 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
         display: dataColumns > 1 ? 'grid' : 'block',
         gridTemplateColumns: dataColumns > 1 ? `repeat(${dataColumns}, 1fr)` : undefined,
         gap: dataColumns > 1 ? '1rem' : undefined,
+        minWidth: 'fit-content', // Ensure content doesn't get squished
       }}>
         {dataChunks.map((chunk, chunkIdx) => (
           <table 
             key={chunkIdx}
-            className="w-full" 
-            style={textColor ? { color: textColor } : undefined}
+            className="w-full"
+            style={{
+              ...(textColor ? { color: textColor } : {}),
+              tableLayout: 'auto', // Allow table to size naturally
+              minWidth: '100%', // Ensure table takes full width of container
+            }}
           >
             <thead style={headerBg ? { backgroundColor: headerBg } : undefined}>
               <tr>

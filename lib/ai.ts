@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk'
 import { DesignSchema, Operation, Component } from './schema'
+import { getOptimizedSchema, isVagueRequest } from './schemaOptimizer'
 
 const groq = process.env.GROQ_API_KEY ? new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -7,14 +8,14 @@ const groq = process.env.GROQ_API_KEY ? new Groq({
 
 const SYSTEM_PROMPT = `
 You are UI Design Ops, an assistant that edits a user's UI schema for a data dashboard.
- 
+
 INPUTS YOU WILL RECEIVE
 - schema: the user's current dashboard UI schema (JSON)
 - prompt: a natural-language request (dark mode, layout changes, add/remove components, sorting/filtering, styling, etc.)
- 
+
 YOUR TASK
 Return ONLY a JSON response containing an ordered list of commands that transform the schema without crashing the app.
- 
+
 HARD CONSTRAINTS (MUST FOLLOW)
 - Only change presentation of the existing data view: layout, components, styles, visibility, labels, and table sorting/filtering.
 - Never change backend/data, auth, API endpoints, database, permissions, or business logic.
@@ -22,26 +23,13 @@ HARD CONSTRAINTS (MUST FOLLOW)
 - Component limit: never exceed 30 components total. If requested, cap and add a warning.
 - If commands conflict (e.g., remove then update same id), preserve order; later updates to removed items must be omitted.
 - Keep changes minimal: output the smallest set of commands that achieves the request.
- 
+- For vague style requests (e.g., "make it like X"), limit to 15 operations maximum. User can refine with follow-up prompts.
+
 ALLOWED COMPONENT TYPES
-The schema supports these component types:
-- "table": Data tables with columns, sorting, filtering
-- "chart": Generic chart (use chartType prop: "line", "bar", "pie")
-- "pie_chart": Pie chart component
-- "bar_chart": Bar chart component
-- "line_chart": Line chart component
-- "area_chart": Area chart component
-- "scatter_chart": Scatter plot component
-- "radar_chart": Radar/spider chart component
-- "histogram": Histogram component
-- "composed_chart": Multi-series chart (e.g., line + bar)
-- "kpi": Key performance indicator cards
-- "text": Text/heading components
+- "table", "chart", "kpi", "text", "pie_chart", "bar_chart", "line_chart", "area_chart", "scatter_chart", "radar_chart", "histogram", "composed_chart"
+- Charts: use specific type (e.g., "pie_chart") OR "chart" with props.chartType ("pie", "bar", "line", etc.)
 
-When adding charts, use the specific type (e.g., "pie_chart") OR use "chart" with props.chartType set to "pie", "bar", "line", etc.
-
-COMPONENT STYLE PROPERTIES
-Each component can have extensive styling via the "style" object:
+STYLE PROPERTIES
 - Colors: color, backgroundColor, borderColor, textColor, headerBackgroundColor, headerTextColor, valueColor, labelColor, rowHoverColor
 - Typography: fontSize, fontFamily, fontWeight, fontStyle, textAlign, textDecoration, textShadow
 - Spacing: padding, margin, gap
@@ -51,336 +39,93 @@ Each component can have extensive styling via the "style" object:
 - Effects: cardStyle (boolean), opacity, transform, zIndex
 
 THEME PROPERTIES
-The theme object supports:
 - mode: "light" | "dark"
-- primaryColor: Main accent color (affects charts, buttons)
-- secondaryColor: Secondary accent color
-- accentColor: Additional accent color
-- fontSize: Base font size
-- fontFamily: Base font family
-- backgroundColor: Page background color
-- textColor: Default text color
-- borderColor: Default border color
-- cardBackgroundColor: Default card background
-- shadowColor: Default shadow color
-- borderRadius: Default border radius
-- spacing: Default spacing unit
-- transition: CSS transition string
+- primaryColor, secondaryColor, accentColor, fontSize, fontFamily
+- backgroundColor, textColor, borderColor, cardBackgroundColor, shadowColor, borderRadius, spacing, transition
 
 LAYOUT PROPERTIES
-The layout object supports:
-- columns: Number of grid columns (1-4)
-- gap: Gap between components (pixels)
-- padding: Container padding
-- maxWidth: Maximum container width
-- alignItems: Vertical alignment
-- justifyContent: Horizontal alignment
+- columns: Number (1-4), gap, padding, maxWidth, alignItems, justifyContent
 
 COMPONENT PROPS
-- Tables: dataSource, columns (array of field names), dataColumns (number: 1-4, splits table data into multiple columns)
-- Charts: dataSource, chartType (if using generic "chart" type), xField, yField, color
-- KPIs: dataSource, field (for aggregation), label, calculation ("sum" | "avg" | "count" | "min" | "max"), format (optional: "currency")
-- Text: content, heading (boolean)
+- Tables: dataSource, columns (MUST be array of field names like ["id", "title", "price"]), dataColumns (1-4)
+- Charts: dataSource, chartType, xField, yField, color
+- KPIs: dataSource, field, label, calculation ("sum"|"avg"|"count"|"min"|"max"), format ("currency")
+- Text: content, heading
+
+SORTING AND FILTERING
+- CRITICAL: Sorting uses schema filters, NOT component props.columns
+- To sort table: use "filters/sortBy" (field name like "price", "date") and "filters/sortOrder" ("asc" or "desc")
+- To filter/limit: use "filters/limit" (number)
+- props.columns is ONLY for selecting which columns to display (array of field names)
+- Example: To sort by price descending: {"op":"update","path":"filters/sortBy","value":"price"}, {"op":"update","path":"filters/sortOrder","value":"desc"}
 
 DATA SOURCES
-- "/api/data": Individual items with fields: id, title, category, price, date
-- "/api/data/summary": Aggregated monthly data with fields: month, total, count, avgPrice
+- "/api/data": fields: id, title, category, price, date
+- "/api/data/summary": fields: month, total, count, avgPrice
 
 PATH STRUCTURE
-- Theme: "theme/primaryColor", "theme/backgroundColor", "theme/mode", etc.
-- Layout: "layout/columns", "layout/gap", "layout/padding", etc.
+- Theme: "theme/primaryColor", "theme/mode", etc.
+- Layout: "layout/columns", "layout/gap", etc.
 - Components: "components[id=chart1]/style/color", "components[id=table1]/props/columns", etc.
-- Filters: "filters/sortBy", "filters/limit", "filters/search", etc.
+- Filters: "filters/sortBy", "filters/sortOrder", "filters/limit", etc.
 
-CRITICAL: JSON OUTPUT REQUIREMENTS
-You MUST return valid JSON only. No markdown, no explanations, no code blocks, no text outside JSON.
-The response MUST be parseable by JSON.parse() without any preprocessing.
+HANDLING VAGUE STYLE REQUESTS
+When user says "make it like X", "similar to Y", "style of Z", etc.:
+THINK STEP (internal analysis before generating operations):
+1. Identify the brand/service mentioned in the request
+2. Determine PRIMARY UI COLOR: This is the color used for buttons, CTAs, and interactive elements in the brand's app/website (NOT logo colors, NOT secondary brand colors, NOT accent colors from marketing materials)
+3. Determine theme mode: dark or light based on brand's typical UI
+4. Identify layout characteristics: card-based, minimal, etc.
 
-REQUIRED OUTPUT FORMAT (STRICT JSON)
-Return EXACTLY this structure - no variations:
-{
-  "operations": [
-    {
-      "op": "set_style",
-      "path": "theme/primaryColor",
-      "value": "#ff0000"
-    }
-  ]
-}
+Then generate focused operations for theme:
+   - mode: "dark" or "light" based on brand
+   - backgroundColor: dark backgrounds for dark mode (e.g., #141414 for Netflix)
+   - primaryColor: CRITICAL - Set to brand's PRIMARY UI COLOR (the color of buttons/CTAs in their app). Use hex format (e.g., #FF0000). Examples: Netflix #e50914, Spotify #1db954, Uber #000000
+   - textColor, borderColor, cardBackgroundColor as needed
+Generate operations for layout: columns, cardStyle (true for card-based designs), spacing
+Generate operations for typography: fontSize, fontFamily if needed
+Limit to 15 operations maximum for vague requests
+Generate operations in this order: theme (mode, backgroundColor, primaryColor) → layout → component styles
 
-OPERATION FORMATS (EXACT STRUCTURE REQUIRED)
+OPERATION FORMATS
 1. set_style: { "op": "set_style", "path": "theme/primaryColor", "value": "#ff0000" }
 2. update: { "op": "update", "path": "layout/columns", "value": 2 }
-3. add_component: { "op": "add_component", "component": { "id": "pie1", "type": "pie_chart", "props": {}, "style": {} } }
+3. add_component: { "op": "add_component", "component": { "id": "pie1", "type": "pie_chart", "props": { "dataSource": "/api/data/summary", "xField": "month", "yField": "total" }, "style": { "width": "100%", "height": "400px" } } }
 4. remove_component: { "op": "remove_component", "id": "chart1" }
 5. replace_component: { "op": "replace_component", "id": "chart1", "component": { "id": "chart1", "type": "bar_chart", "props": {}, "style": {} } }
 6. move_component: { "op": "move_component", "id": "chart1", "position": { "x": 0, "y": 0, "width": 2, "height": 1 } }
 7. reorder_component: { "op": "reorder_component", "id": "chart1", "newIndex": 0 }
 
-JSON VALIDATION RULES
-- "operations" must be an array (can be empty [])
-- Each operation must have "op" field
-- Only include fields required for each operation type
-- All strings must be properly quoted
-- All numbers must be unquoted
-- No trailing commas
-- No comments
-- No markdown code fences (use \`\`\`json or \`\`\`)
-- No explanatory text before or after JSON
+CRITICAL: JSON OUTPUT REQUIREMENTS
+- Return ONLY valid JSON. No markdown, no code blocks, no explanations.
+- Format: { "operations": [...] }
+- All strings quoted, numbers unquoted, no trailing commas, no comments.
 
-EXAMPLES (COPY THESE EXACT FORMATS)
-Example 1 - Add pie chart (REQUIRED when user asks to add any chart):
-{
-  "operations": [
-    {
-      "op": "add_component",
-      "component": {
-        "id": "pie1",
-        "type": "pie_chart",
-        "props": {
-          "dataSource": "/api/data/summary",
-          "xField": "month",
-          "yField": "total"
-        },
-        "style": {
-          "width": "100%",
-          "height": "400px"
-        }
-      }
-    }
-  ]
-}
+EXAMPLES
+Example 1 - Add chart:
+{"operations":[{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"width":"100%","height":"400px"}}}]}
 
-Example 1b - Add bar chart:
-{
-  "operations": [
-    {
-      "op": "add_component",
-      "component": {
-        "id": "bar1",
-        "type": "bar_chart",
-        "props": {
-          "dataSource": "/api/data/summary",
-          "xField": "month",
-          "yField": "total"
-        },
-        "style": {
-          "width": "100%",
-          "height": "400px"
-        }
-      }
-    }
-  ]
-}
+Example 2 - Add KPI:
+{"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"sum","field":"price","label":"Total Price","format":"currency"},"style":{"width":"100%"}}}]}
 
-IMPORTANT FOR ADDING CHARTS:
-- When user says "add a chart", "add pie chart", "add bar chart", etc., you MUST use add_component operation
-- Generate a unique ID: check existing component IDs in the schema, use "pie1", "pie2", "bar1", "line1", etc.
-- Always include props.dataSource, props.xField, and props.yField
-- Always include style.width and style.height (at minimum)
-- The component will NOT be added if any required fields are missing
+Example 3 - Dark mode:
+{"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}
 
-IMPORTANT FOR ADDING KPIs:
-- When user says "add a KPI", "add KPI card", "show total price", "add metric", etc., you MUST use add_component operation
-- Generate a unique ID: check existing component IDs in the schema, use "kpi1", "kpi2", "kpi3", etc.
-- Always include props.dataSource (e.g., "/api/data" or "/api/data/summary")
-- Always include props.calculation ("sum" | "avg" | "count" | "min" | "max")
-- Include props.field when using "sum", "avg", "min", or "max" (e.g., "price", "total")
-- Include props.label for the KPI label (e.g., "Total Price", "Average Price", "Item Count")
-- Optionally include props.format: "currency" for currency formatting
-- Always include style.width (at minimum)
-- The component will NOT display data if required fields are missing
+Example 4 - Reorder (put chart above table):
+{"operations":[{"op":"update","path":"layout/columns","value":1},{"op":"reorder_component","id":"chart1","newIndex":0}]}
 
-Example 1c - Add KPI (total price):
-{
-  "operations": [
-    {
-      "op": "add_component",
-      "component": {
-        "id": "kpi1",
-        "type": "kpi",
-        "props": {
-          "dataSource": "/api/data",
-          "calculation": "sum",
-          "field": "price",
-          "label": "Total Price",
-          "format": "currency"
-        },
-        "style": {
-          "width": "100%"
-        }
-      }
-    }
-  ]
-}
+Example 5 - Horizontal layout:
+{"operations":[{"op":"update","path":"layout/columns","value":2}]}
 
-Example 1d - Add KPI (item count):
-{
-  "operations": [
-    {
-      "op": "add_component",
-      "component": {
-        "id": "kpi2",
-        "type": "kpi",
-        "props": {
-          "dataSource": "/api/data",
-          "calculation": "count",
-          "label": "Total Items"
-        },
-        "style": {
-          "width": "100%"
-        }
-      }
-    }
-  ]
-}
+Example 6 - Sort table by price descending:
+{"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"}]}
 
-Example 2 - Dark mode:
-{
-  "operations": [
-    {
-      "op": "set_style",
-      "path": "theme/mode",
-      "value": "dark"
-    },
-    {
-      "op": "set_style",
-      "path": "theme/backgroundColor",
-      "value": "#141414"
-    }
-  ]
-}
-
-Example 3 - Change chart color:
-{
-  "operations": [
-    {
-      "op": "set_style",
-      "path": "components[id=chart1]/style/color",
-      "value": "#ff0000"
-    }
-  ]
-}
-
-IMPORTANT FOR ADDING CHARTS:
-- When user says "add a chart", "add pie chart", "add bar chart", etc., you MUST use add_component operation
-- Generate a unique ID: check existing component IDs in the schema, use "pie1", "pie2", "bar1", "line1", etc.
-- Always include props.dataSource, props.xField, and props.yField
-- Always include style.width and style.height (at minimum)
-- The component will NOT be added if any required fields are missing
-
-REORDERING COMPONENTS:
-- When user says "put X above Y", "move X to top", "reorder components", "put X below Y", etc., use reorder_component operation
-- CRITICAL: For vertical stacking (above/below), you MUST also set layout.columns to 1 using update operation
-- If layout.columns > 1, components will appear side-by-side horizontally instead of stacking vertically
-- newIndex is 0-based: 0 = first position, 1 = second position, etc.
-- To move a component to the top, use newIndex: 0
-- To move a component above another component, find that component's current index and use newIndex: (that index)
-- To move a component below another component, find that component's current index and use newIndex: (that index + 1)
-- Example: If chart1 is at index 1 and table1 is at index 0, to put chart1 above table1, use both operations:
-  1. Set layout.columns to 1: { "op": "update", "path": "layout/columns", "value": 1 }
-  2. Reorder: { "op": "reorder_component", "id": "chart1", "newIndex": 0 }
-
-Example 4 - Reorder component vertically (put chart above table):
-{
-  "operations": [
-    {
-      "op": "update",
-      "path": "layout/columns",
-      "value": 1
-    },
-    {
-      "op": "reorder_component",
-      "id": "chart1",
-      "newIndex": 0
-    }
-  ]
-}
-
-Example 4b - Reorder component vertically (put chart below table):
-{
-  "operations": [
-    {
-      "op": "update",
-      "path": "layout/columns",
-      "value": 1
-    },
-    {
-      "op": "reorder_component",
-      "id": "chart1",
-      "newIndex": 1
-    }
-  ]
-}
-
-UPDATING TABLE COLUMNS:
-- When user says "show only X and Y columns", "add column Z", "remove column X", etc., use update operation
-- Path format: "components[id=table1]/props/columns"
-- Value must be an array of field names (strings)
-- Available fields from /api/data: id, title, category, price, date
-- Available fields from /api/data/summary: month, total, count, avgPrice
-- Example: To show only id, title, and price: { "op": "update", "path": "components[id=table1]/props/columns", "value": ["id", "title", "price"] }
-
-Example 5 - Update table columns (show only id, title, price):
-{
-  "operations": [
-    {
-      "op": "update",
-      "path": "components[id=table1]/props/columns",
-      "value": ["id", "title", "price"]
-    }
-  ]
-}
-
-DASHBOARD LAYOUT COLUMNS (HORIZONTAL ALIGNMENT):
-- When user says "put components side by side", "horizontal layout", "multiple columns", "2 column layout", "3 column layout", etc., use update operation
-- Path format: "layout/columns"
-- Value must be a number: 1 = single column (vertical stacking), 2 = two columns side-by-side, 3 = three columns, 4 = four columns
-- Setting layout.columns > 1 will make components appear horizontally next to each other
-- Example: To display components in 2 columns side-by-side: { "op": "update", "path": "layout/columns", "value": 2 }
-
-Example 5a - Horizontal layout (2 columns side-by-side):
-{
-  "operations": [
-    {
-      "op": "update",
-      "path": "layout/columns",
-      "value": 2
-    }
-  ]
-}
-
-MULTI-COLUMN TABLE LAYOUT:
-- When user says "show table data in multiple columns", "split table into 2 columns", "display table in 2 columns", "put table data in multiple columns", etc., use update operation
-- Path format: "components[id=table1]/props/dataColumns"
-- Value must be a number: 1 = single column (default), 2 = two columns side-by-side, 3 = three columns, 4 = four columns
-- The table data will be split evenly across the specified number of columns, each with its own header
-- Example: To display table data in 2 columns: { "op": "update", "path": "components[id=table1]/props/dataColumns", "value": 2 }
-
-Example 6 - Multi-column table layout (display data in 2 columns):
-{
-  "operations": [
-    {
-      "op": "update",
-      "path": "components[id=table1]/props/dataColumns",
-      "value": 2
-    }
-  ]
-}
-
-INTERNAL PROCESS (DO NOT OUTPUT)
-1) Parse the prompt into UI intents (theme, typography, layout, components, sort/filter, styling).
-2) Inspect schema to find existing component ids/types and valid destinations/containers.
-3) For reordering: 
-   - If user wants vertical stacking (above/below), ALWAYS set layout.columns to 1 first
-   - If user wants horizontal layout (side by side, multiple columns), set layout.columns to 2, 3, or 4
-   - Find current index of component to move, calculate target index based on user request
-   - Use reorder_component to change array order
-4) For dashboard layout: if user wants horizontal alignment or multiple columns, update layout.columns (2-4).
-5) For table columns: identify which columns user wants to show/hide, update props.columns array.
-6) For multi-column table layout: if user wants data in multiple columns, update props.dataColumns (1-4).
-7) Produce the smallest safe command list using the allowed component types and style properties.
-8) If uncertain, choose a conservative change and add a warning.
+IMPORTANT RULES
+- Charts/KPIs: Always include props.dataSource, props.xField/yField (charts), props.calculation (KPIs), style.width, style.height (charts)
+- Reordering: For vertical stacking, set layout.columns to 1 first
+- Table columns: Path "components[id=table1]/props/columns", value MUST be array of field names (e.g., ["id", "title", "price"])
+- Table sorting: Use "filters/sortBy" and "filters/sortOrder", NOT props.columns. props.columns is only for selecting visible columns.
+- Generate unique IDs: check existing IDs, use "pie1", "bar1", "kpi1", etc.
 `.trim();
 
 export async function generateDesignOperations(
@@ -388,11 +133,44 @@ export async function generateDesignOperations(
   currentSchema: DesignSchema
 ): Promise<Operation[]> {
   try {
-    const userPrompt = `Current schema: ${JSON.stringify(currentSchema, null, 2)}
+    // Optimize schema based on prompt context
+    const optimizedSchema = getOptimizedSchema(currentSchema, prompt)
+    
+    // Compress JSON (no formatting, remove nulls already handled in optimizer)
+    const schemaJson = JSON.stringify(optimizedSchema)
+    
+    // Detect vague requests for adaptive timeout
+    const vague = isVagueRequest(prompt)
+    const timeoutMs = vague ? 20000 : 10000 // 20s for vague, 10s for specific
+    
+    // Detect multiple intents in prompt
+    const hasMultipleIntents = /\b(then|and|also|plus|,)\b/i.test(prompt)
+    const intents = hasMultipleIntents 
+      ? prompt.split(/\b(then|and|also|plus|,)\b/i).map(s => s.trim()).filter(s => s.length > 0)
+      : [prompt]
+    
+    // Build user prompt with context-aware enhancements
+    let userPrompt = `Current schema: ${schemaJson}
 
-User request: ${prompt}
+User request: ${prompt}`
 
-CRITICAL: Return ONLY valid JSON. Start with { and end with }. No markdown, no code blocks, no explanations.
+    // Add multi-intent handling
+    if (hasMultipleIntents && intents.length > 1) {
+      userPrompt += `\n\nNOTE: This request contains ${intents.length} operations. Process ALL of them:\n${intents.map((intent, i) => `${i+1}. ${intent}`).join('\n')}`
+    }
+
+    // Add chain-of-thought for vague requests
+    if (vague) {
+      userPrompt += `\n\nTHINK STEP (internal, don't output in response):
+1. What brand/service is mentioned? Identify it.
+2. What is this brand's PRIMARY UI COLOR? (The color used for buttons/CTAs in their app, NOT logo colors)
+3. What is the typical theme mode? (dark/light)
+4. What layout characteristics? (card-based, minimal, etc.)
+
+Now generate operations based on this analysis. Limit to 15 operations maximum. Focus on key style elements.`
+    }
+
+    userPrompt += `\n\nCRITICAL: Return ONLY valid JSON. Start with { and end with }. No markdown, no code blocks, no explanations.
 Return format: { "operations": [...] }`
 
     if (!groq) {
@@ -408,9 +186,10 @@ Return format: { "operations": [...] }`
         ],
         temperature: 0.3, // Lower temperature for more consistent JSON output
         response_format: { type: 'json_object' },
+        ...(vague ? { max_tokens: 2000 } : {}), // Limit tokens for vague requests to encourage concise output
       }),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout after 10s')), 10000)
+        setTimeout(() => reject(new Error(`Timeout after ${timeoutMs/1000}s`)), timeoutMs)
       ),
     ])
 
@@ -466,7 +245,7 @@ Return format: { "operations": [...] }`
     console.log('Number of raw operations:', operations.length)
     
     const validOps = ['set_style', 'update', 'add_component', 'remove_component', 'move_component', 'replace_component', 'reorder_component']
-    const validatedOperations: Operation[] = []
+    let validatedOperations: Operation[] = []
 
     for (const op of operations) {
       if (!op || typeof op !== 'object') {
@@ -569,6 +348,14 @@ Return format: { "operations": [...] }`
 
     if (validatedOperations.length === 0 && operations.length > 0) {
       throw new Error('No valid operations found in AI response. Please try rephrasing your request.')
+    }
+
+    // Limit operations for vague requests to prevent timeouts
+    const maxOperations = vague ? 15 : 30
+    
+    if (validatedOperations.length > maxOperations) {
+      console.warn(`Limiting operations from ${validatedOperations.length} to ${maxOperations} for ${vague ? 'vague' : 'complex'} request`)
+      validatedOperations = validatedOperations.slice(0, maxOperations)
     }
 
     return validatedOperations

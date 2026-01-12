@@ -38,12 +38,13 @@ export function logSchemaUpdate(entry: Omit<LogEntry, 'timestamp' | 'endpoint' |
   console.log('[SCHEMA_UPDATE]', JSON.stringify(logEntry, null, 2))
 }
 
-export function logError(entry: Omit<LogEntry, 'timestamp' | 'endpoint' | 'operation'>) {
+export function logError(entry: Omit<LogEntry, 'timestamp' | 'operation'> & { endpoint?: string }) {
+  const { endpoint, ...rest } = entry
   const logEntry: LogEntry = {
     timestamp: new Date().toISOString(),
-    endpoint: entry.endpoint || 'unknown',
+    endpoint: endpoint || 'unknown',
     operation: 'error',
-    ...entry,
+    ...rest,
   }
   
   console.error('[ERROR]', JSON.stringify(logEntry, null, 2))
