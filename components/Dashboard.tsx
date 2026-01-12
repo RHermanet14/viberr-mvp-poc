@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Component as ReactComponent, ErrorInfo, ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
-import { DesignSchema, Component as SchemaComponent, getDefaultSchema } from '@/lib/schema'
+import { DesignSchema, Component as SchemaComponent, getDefaultSchema, getBlankSchema } from '@/lib/schema'
 import { DataTable } from './DataTable'
 import { DataChart } from './DataChart'
 import { KPI } from './KPI'
@@ -81,6 +81,7 @@ export function Dashboard() {
   const [previousSchema, setPreviousSchema] = useState<DesignSchema | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showControls, setShowControls] = useState(true)
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -201,6 +202,43 @@ export function Dashboard() {
     }
   }
 
+  const handleBlankPreset = async () => {
+    if (!schema) return
+
+    // Clear any previous errors
+    setError(null)
+    
+    // Store current schema as backup
+    const currentSchemaBackup = JSON.parse(JSON.stringify(schema))
+    setPreviousSchema(currentSchemaBackup)
+
+    try {
+      const blankSchema = getBlankSchema()
+      
+      // Save the blank schema to the server
+      const res = await fetch('/api/schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blankSchema),
+      })
+
+      if (res.ok) {
+        // Apply blank schema
+        setSchema(blankSchema)
+      } else {
+        const errorData = await res.json()
+        setError(errorData.error || 'Failed to apply blank preset')
+        // Roll back to backup
+        setSchema(currentSchemaBackup)
+      }
+    } catch (error: any) {
+      console.error('Failed to apply blank preset:', error)
+      setError(error.message || 'Failed to apply blank preset')
+      // Roll back to backup
+      setSchema(currentSchemaBackup)
+    }
+  }
+
   // #region agent log
   // Log schema changes - MUST be before any conditional returns (Rules of Hooks)
   useEffect(() => {
@@ -258,54 +296,18 @@ export function Dashboard() {
   }
 
   return (
-    <div style={themeStyles} className="min-h-screen p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 
-          className="text-3xl font-bold mb-6"
-          style={{ color: getTextColor() }}
-        >
-          Personalized Dashboard
-        </h1>
-        
-        {error && (
-          <div 
-            className="mb-4 p-4 rounded-lg border-2"
-            style={{
-              backgroundColor: schema.theme.backgroundColor 
-                ? (getTextColor() === '#ffffff' ? '#7f1d1d' : '#fee2e2')
-                : (schema.theme.mode === 'dark' ? '#7f1d1d' : '#fee2e2'),
-              borderColor: schema.theme.backgroundColor
-                ? (getTextColor() === '#ffffff' ? '#991b1b' : '#fecaca')
-                : (schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca'),
-              color: schema.theme.backgroundColor
-                ? (getTextColor() === '#ffffff' ? '#fecaca' : '#991b1b')
-                : (schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b'),
-            }}
+    <div style={themeStyles} className="min-h-screen">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+        <div className="flex items-center justify-between mb-3">
+          <h1 
+            className="text-xl sm:text-2xl font-bold"
+            style={{ color: getTextColor() }}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <strong>Error:</strong> {error}
-                <p className="text-sm mt-1">The previous design has been restored.</p>
-              </div>
-              <button
-                onClick={() => setError(null)}
-                className="ml-4 px-3 py-1 rounded"
-                style={{
-                  backgroundColor: schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca',
-                  color: schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b',
-                }}
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-        
-        <div className="flex items-center gap-4 mb-4">
-          <AIPrompt onPrompt={handleAIPrompt} schema={schema} />
+            Personalized Dashboard
+          </h1>
           <button
-            onClick={handleRestoreDefault}
-            className="px-4 py-2 rounded font-medium transition-colors"
+            onClick={() => setShowControls(!showControls)}
+            className="px-2 py-1 rounded text-xs font-medium transition-colors"
             style={{
               backgroundColor: schema.theme.primaryColor || '#3b82f6',
               color: '#ffffff',
@@ -316,10 +318,92 @@ export function Dashboard() {
             onMouseLeave={(e) => {
               e.currentTarget.style.opacity = '1'
             }}
+            title={showControls ? 'Hide controls' : 'Show controls'}
           >
-            Restore Default
+            {showControls ? '▲' : '▼'}
           </button>
         </div>
+        
+        {showControls && (
+          <>
+            {error && (
+              <div 
+                className="mb-3 p-3 rounded-lg border-2"
+                style={{
+                  backgroundColor: schema.theme.backgroundColor 
+                    ? (getTextColor() === '#ffffff' ? '#7f1d1d' : '#fee2e2')
+                    : (schema.theme.mode === 'dark' ? '#7f1d1d' : '#fee2e2'),
+                  borderColor: schema.theme.backgroundColor
+                    ? (getTextColor() === '#ffffff' ? '#991b1b' : '#fecaca')
+                    : (schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca'),
+                  color: schema.theme.backgroundColor
+                    ? (getTextColor() === '#ffffff' ? '#fecaca' : '#991b1b')
+                    : (schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b'),
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <strong>Error:</strong> {error}
+                    <p className="text-sm mt-1">The previous design has been restored.</p>
+                  </div>
+                  <button
+                    onClick={() => setError(null)}
+                    className="ml-4 px-3 py-1 rounded"
+                    style={{
+                      backgroundColor: schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca',
+                      color: schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            <div className="mb-3">
+              <AIPrompt onPrompt={handleAIPrompt} schema={schema} showExamples={false} />
+              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                <p className="text-xs flex-shrink-0" style={{ color: schema.theme.mode === 'dark' ? '#9ca3af' : '#6b7280' }}>
+                  Examples: "Dark mode", "Bigger font", "Two columns", "Add pie chart", "Sort by price"
+                </p>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={handleRestoreDefault}
+                    className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap"
+                    style={{
+                      backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                      color: '#ffffff',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '0.9'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1'
+                    }}
+                  >
+                    Restore Default
+                  </button>
+                  <button
+                    onClick={handleBlankPreset}
+                    className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap"
+                    style={{
+                      backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                      color: '#ffffff',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '0.9'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1'
+                    }}
+                  >
+                    Blank
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         <ErrorBoundary
           schema={schema}
@@ -330,7 +414,7 @@ export function Dashboard() {
           }}
         >
           <div
-            className="mt-8"
+            className="pt-2"
             style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${schema.layout.columns}, 1fr)`,
@@ -439,7 +523,7 @@ function ComponentRenderer({
       case 'kpi':
         return (
           <div style={style}>
-            <KPI component={enhancedComponent} />
+            <KPI component={enhancedComponent} theme={schema.theme} />
           </div>
         )
       case 'text':

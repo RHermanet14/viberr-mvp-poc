@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Component } from '@/lib/schema'
+import { Component, DesignSchema } from '@/lib/schema'
 
 interface KPIProps {
   component: Component
+  theme?: DesignSchema['theme']
 }
 
-export function KPI({ component }: KPIProps) {
+export function KPI({ component, theme }: KPIProps) {
   const [value, setValue] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -18,8 +19,8 @@ export function KPI({ component }: KPIProps) {
         if (res.ok) {
           const items = await res.json()
           
-          // Calculate KPI based on metric
-          const metric = component.props.metric || 'count'
+          // Calculate KPI based on metric (support both 'metric' and 'calculation' prop names for backward compatibility)
+          const metric = component.props.metric || component.props.calculation || 'count'
           let calculatedValue: number
           
           switch (metric) {
@@ -38,6 +39,24 @@ export function KPI({ component }: KPIProps) {
                 calculatedValue = items.reduce((sum: number, item: any) => 
                   sum + (parseFloat(item[component.props.field || 'price']) || 0), 0
                 ) / items.length
+              }
+              break
+            case 'min':
+              if (items.length === 0) {
+                calculatedValue = 0
+              } else {
+                calculatedValue = Math.min(...items.map((item: any) => 
+                  parseFloat(item[component.props.field || 'price']) || 0
+                ))
+              }
+              break
+            case 'max':
+              if (items.length === 0) {
+                calculatedValue = 0
+              } else {
+                calculatedValue = Math.max(...items.map((item: any) => 
+                  parseFloat(item[component.props.field || 'price']) || 0
+                ))
               }
               break
             default:
@@ -76,14 +95,28 @@ export function KPI({ component }: KPIProps) {
     return val.toLocaleString()
   }
 
-  // Apply custom styles from component.style, with fallbacks
+  // Determine theme-aware colors
+  const isDarkMode = theme?.mode === 'dark'
+  const defaultBgColor = isDarkMode ? '#1f2937' : '#f9fafb'
+  const defaultBorderColor = isDarkMode ? '#374151' : '#e5e7eb'
+  const defaultTextColor = theme?.textColor || (isDarkMode ? '#f9fafb' : '#111827')
+  const defaultLabelColor = component.style?.labelColor || theme?.textColor || (isDarkMode ? '#d1d5db' : '#6b7280')
+  const defaultValueColor = component.style?.valueColor || theme?.textColor || (isDarkMode ? '#ffffff' : '#111827')
+
+  // Apply custom styles from component.style, with theme-aware fallbacks
   const kpiStyle = {
     padding: component.style?.padding || '1.5rem',
-    border: component.style?.border || '1px solid #e5e7eb',
+    border: component.style?.border || `1px solid ${defaultBorderColor}`,
+    borderColor: component.style?.borderColor || theme?.borderColor || defaultBorderColor,
     borderRadius: component.style?.borderRadius || '0.5rem',
-    backgroundColor: component.style?.backgroundColor || '#f9fafb',
+    backgroundColor: component.style?.backgroundColor || theme?.cardBackgroundColor || defaultBgColor,
     boxShadow: component.style?.boxShadow,
     transition: component.style?.boxShadow ? 'box-shadow 0.3s ease' : undefined,
+    // Prevent text overflow
+    width: component.style?.width || '100%',
+    minWidth: component.style?.minWidth || 0,
+    maxWidth: component.style?.maxWidth || '100%',
+    overflow: 'hidden',
     ...component.style,
   }
   const cardStyle = component.style?.cardStyle === true
@@ -111,17 +144,26 @@ export function KPI({ component }: KPIProps) {
       <div 
         className="text-sm mb-2"
         style={{
-          color: component.style?.labelColor || '#6b7280',
+          color: component.style?.labelColor || theme?.textColor || defaultLabelColor,
           fontSize: component.style?.fontSize,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
       >
         {label}
       </div>
       <div 
-        className="text-3xl font-bold"
+        className="font-bold"
         style={{
-          color: component.style?.valueColor,
+          color: component.style?.valueColor || theme?.textColor || defaultValueColor,
           fontSize: component.style?.fontSize || '1.875rem',
+          overflow: 'hidden',
+          wordBreak: 'break-word',
+          // Allow font size to scale down if needed
+          lineHeight: 1.2,
+          // Ensure text doesn't overflow container
+          maxWidth: '100%',
         }}
       >
         {formatValue(value)}

@@ -79,7 +79,7 @@ The layout object supports:
 COMPONENT PROPS
 - Tables: dataSource, columns (array of field names), dataColumns (number: 1-4, splits table data into multiple columns)
 - Charts: dataSource, chartType (if using generic "chart" type), xField, yField, color
-- KPIs: dataSource, field (for aggregation), label, calculation ("sum" | "avg" | "count" | "min" | "max")
+- KPIs: dataSource, field (for aggregation), label, calculation ("sum" | "avg" | "count" | "min" | "max"), format (optional: "currency")
 - Text: content, heading (boolean)
 
 DATA SOURCES
@@ -179,6 +179,61 @@ IMPORTANT FOR ADDING CHARTS:
 - Always include props.dataSource, props.xField, and props.yField
 - Always include style.width and style.height (at minimum)
 - The component will NOT be added if any required fields are missing
+
+IMPORTANT FOR ADDING KPIs:
+- When user says "add a KPI", "add KPI card", "show total price", "add metric", etc., you MUST use add_component operation
+- Generate a unique ID: check existing component IDs in the schema, use "kpi1", "kpi2", "kpi3", etc.
+- Always include props.dataSource (e.g., "/api/data" or "/api/data/summary")
+- Always include props.calculation ("sum" | "avg" | "count" | "min" | "max")
+- Include props.field when using "sum", "avg", "min", or "max" (e.g., "price", "total")
+- Include props.label for the KPI label (e.g., "Total Price", "Average Price", "Item Count")
+- Optionally include props.format: "currency" for currency formatting
+- Always include style.width (at minimum)
+- The component will NOT display data if required fields are missing
+
+Example 1c - Add KPI (total price):
+{
+  "operations": [
+    {
+      "op": "add_component",
+      "component": {
+        "id": "kpi1",
+        "type": "kpi",
+        "props": {
+          "dataSource": "/api/data",
+          "calculation": "sum",
+          "field": "price",
+          "label": "Total Price",
+          "format": "currency"
+        },
+        "style": {
+          "width": "100%"
+        }
+      }
+    }
+  ]
+}
+
+Example 1d - Add KPI (item count):
+{
+  "operations": [
+    {
+      "op": "add_component",
+      "component": {
+        "id": "kpi2",
+        "type": "kpi",
+        "props": {
+          "dataSource": "/api/data",
+          "calculation": "count",
+          "label": "Total Items"
+        },
+        "style": {
+          "width": "100%"
+        }
+      }
+    }
+  ]
+}
 
 Example 2 - Dark mode:
 {
@@ -355,7 +410,7 @@ Return format: { "operations": [...] }`
         response_format: { type: 'json_object' },
       }),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout after 10s')), 30000)
+        setTimeout(() => reject(new Error('Timeout after 10s')), 10000)
       ),
     ])
 

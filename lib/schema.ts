@@ -142,6 +142,26 @@ export function getDefaultSchema(): DesignSchema {
   }
 }
 
+export function getBlankSchema(): DesignSchema {
+  return {
+    theme: {
+      mode: 'light',
+      primaryColor: '#3b82f6',
+      fontSize: '16px',
+      fontFamily: 'system-ui, sans-serif',
+    },
+    layout: {
+      columns: 1,
+      gap: 16,
+    },
+    components: [],
+    filters: {
+      sortBy: 'date',
+      sortOrder: 'desc',
+    },
+  }
+}
+
 export type Operation = 
   | { op: 'set_style'; path: string; value: any }
   | { op: 'update'; path: string; value: any }
