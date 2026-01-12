@@ -125,11 +125,11 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
                   <th 
                     key={col} 
                     className="px-4 py-2 text-left font-semibold"
-                    style={{ 
-                      ...(headerTextColor && { color: headerTextColor }),
-                      ...(component.style?.headerFontSize || component.style?.fontSize ? { fontSize: component.style?.headerFontSize || component.style?.fontSize } : {}),
-                      ...(headerBg && { backgroundColor: headerBg }),
-                    } as React.CSSProperties}
+                  style={{ 
+                    ...(headerTextColor && { color: headerTextColor }),
+                    ...(component.style?.fontSize ? { fontSize: component.style.fontSize } : {}),
+                    ...(headerBg && { backgroundColor: headerBg }),
+                  } as React.CSSProperties}
                   >
                     {col}
                   </th>

@@ -34,7 +34,7 @@ export const authOptions: NextAuthOptions = {
           await prisma.userSchema.create({
             data: {
               userId: user.id,
-              schemaJSON: getDefaultSchema() as Prisma.InputJsonValue,
+              schemaJSON: getDefaultSchema() as unknown as Prisma.InputJsonValue,
             }
           })
         }

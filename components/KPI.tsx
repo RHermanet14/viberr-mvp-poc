@@ -112,7 +112,7 @@ export function KPI({ component }: KPIProps) {
         className="text-sm mb-2"
         style={{
           color: component.style?.labelColor || '#6b7280',
-          fontSize: component.style?.labelFontSize,
+          fontSize: component.style?.fontSize,
         }}
       >
         {label}
@@ -121,7 +121,7 @@ export function KPI({ component }: KPIProps) {
         className="text-3xl font-bold"
         style={{
           color: component.style?.valueColor,
-          fontSize: component.style?.valueFontSize || '1.875rem',
+          fontSize: component.style?.fontSize || '1.875rem',
         }}
       >
         {formatValue(value)}

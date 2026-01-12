@@ -22,13 +22,13 @@ export async function GET() {
     await prisma.userSchema.create({
       data: {
         userId: session.user.id,
-        schemaJSON: defaultSchema as Prisma.InputJsonValue,
+        schemaJSON: defaultSchema as unknown as Prisma.InputJsonValue,
       },
     })
     return NextResponse.json(defaultSchema)
   }
 
-  return NextResponse.json(userSchema.schemaJSON as DesignSchema)
+  return NextResponse.json(userSchema.schemaJSON as unknown as DesignSchema)
 }
 
 export async function POST(request: Request) {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   await prisma.userSchemaVersion.create({
     data: {
       userId: session.user.id,
-      schemaJSON: schema as Prisma.InputJsonValue,
+      schemaJSON: schema as unknown as Prisma.InputJsonValue,
     },
   })
 
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     update: { schemaJSON: schema as Prisma.InputJsonValue },
     create: {
       userId: session.user.id,
-      schemaJSON: schema as Prisma.InputJsonValue,
+      schemaJSON: schema as unknown as Prisma.InputJsonValue,
     },
   })
 

@@ -1,5 +1,5 @@
 import Groq from 'groq-sdk'
-import { DesignSchema, Operation } from './schema'
+import { DesignSchema, Operation, Component } from './schema'
 
 const groq = process.env.GROQ_API_KEY ? new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -449,17 +449,17 @@ Return format: { "operations": [...] }`
               continue
             }
             // Ensure component has required props structure
-            const component = {
+            const componentType = String(op.component.type)
+            const allowedTypes = ['table', 'chart', 'kpi', 'text', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart'] as const
+            if (!allowedTypes.includes(componentType as any)) {
+              console.warn('Invalid component type:', componentType, 'Allowed types:', allowedTypes)
+              continue
+            }
+            const component: Component = {
               id: String(op.component.id),
-              type: String(op.component.type),
+              type: componentType as Component['type'],
               props: op.component.props || {},
               style: op.component.style || {},
-            }
-            // Validate component type is allowed
-            const allowedTypes = ['table', 'chart', 'kpi', 'text', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart']
-            if (!allowedTypes.includes(component.type)) {
-              console.warn('Invalid component type:', component.type, 'Allowed types:', allowedTypes)
-              continue
             }
             console.log('✅ Validated add_component:', component.id, component.type)
             validatedOperations.push({ op: 'add_component', component })

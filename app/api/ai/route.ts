@@ -40,10 +40,10 @@ export async function POST(request: Request) {
     // Save updated schema
     await prisma.userSchema.upsert({
       where: { userId: session.user.id },
-      update: { schemaJSON: updatedSchema as Prisma.InputJsonValue },
+      update: { schemaJSON: updatedSchema as unknown as Prisma.InputJsonValue },
       create: {
         userId: session.user.id,
-        schemaJSON: updatedSchema as Prisma.InputJsonValue,
+        schemaJSON: updatedSchema as unknown as Prisma.InputJsonValue,
       },
     })
 
