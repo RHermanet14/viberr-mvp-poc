@@ -23,27 +23,125 @@ function analyzePromptIntent(prompt: string): {
   needsTopNGuidance: boolean
   needsFontGuidance: boolean
   needsPieChartGuidance: boolean
+  mentionsTable: boolean
+  mentionsChart: boolean
+  mentionsKpi: boolean
+  mentionsImage: boolean
+  mentionsText: boolean
 } {
   const lower = prompt.toLowerCase()
+
+  /**
+   * Intent detection notes:
+   * - This is *heuristic* and should favor correct operation selection over over-triggering.
+   * - We explicitly disambiguate known conflicts like:
+   *   - "order" (sort rows vs reorder components)
+   *   - "show" (filter "show only" vs add "show a chart")
+   *   - "move" (reorder/relative placement vs absolute x/y positioning)
+   */
+
+  // Shared helpers
+  const hasComponentNoun = /\b(kpi|kpis|metric|metrics|stat|stats|table|grid|list|chart|graph|plot|visualization|viz|pie|bar|line|area|scatter|histogram|text|heading|title|subtitle|caption|note|image|img|photo|picture|logo|banner|thumbnail)\b/i.test(lower)
+  const hasRelativePlacementPhrase = /\b(above|below|under|beneath|over|before|after|right after|right before|next to|beside|to the left of|to the right of|between|in front of|behind|at the end|at the bottom|at the beginning|first|last)\b/i.test(lower)
+  const hasExplicitTopFrontPhrase = /\b(to top|to the top|at top|at the top|on top|to front|to the front|to beginning|to the beginning)\b/i.test(lower)
+  const hasAbsolutePositionSignal = /\b(x\s*[:=]\s*\d+|y\s*[:=]\s*\d+|row\s*[:=]?\s*\d+|col(umn)?\s*[:=]?\s*\d+|\bcoordinates?\b|\bgrid position\b|\btop-left\b|\bbottom-right\b|\bpx\b)\b/i.test(lower)
+  const hasRowSortSignal = /\b(sort|order by|orderby|filter|search|limit|top\s+\d+|bottom\s+\d+|highest|lowest|most|least|ascending|descending|asc\b|desc\b)\b/i.test(lower)
+  const hasRowSortField = /\b(price|date|category|title|month|total|count|avg|average)\b/i.test(lower)
+  const hasShowOnlySignal = /\b(show only|only show|show me only|display only|only display|only the)\b/i.test(lower)
+
+  // Detect operation types (expanded)
+  const isReorder =
+    // Direct reorder verbs
+    /\b(reorder|re-arrange|rearrange|arrange|shuffle|swap|switch|promote|demote|bring|send)\b/i.test(lower) ||
+    // "move" is ambiguous; treat as reorder unless it clearly looks like absolute positioning
+    (/\bmove\b/i.test(lower) && !hasAbsolutePositionSignal) ||
+    // "put/place" is also ambiguous; treat as reorder when there is a component noun or relative phrase
+    (/\b(put|place|position)\b/i.test(lower) && (hasComponentNoun || hasRelativePlacementPhrase || hasExplicitTopFrontPhrase)) ||
+    // "order" conflicts with row sorting; treat as reorder only when not a row-sort context or when relative placement is present
+    (/\border\b/i.test(lower) && (!hasRowSortSignal || hasRelativePlacementPhrase)) ||
+    // Relative placement phrases strongly indicate reorder_component
+    hasRelativePlacementPhrase ||
+    // Existing "top/front/beginning" phrases
+    hasExplicitTopFrontPhrase
+
+  const addVerbs = /\b(add|create|insert|new|generate|include|bring in|drop in)\b/i
+  const showAddVerbs = /\b(show|display)\b/i
+
+  const isAddKpi =
+    // Explicit add language + KPI nouns
+    (addVerbs.test(lower) && /\b(kpi|kpis|metric|metrics|stat|stats)\b/i.test(lower)) ||
+    // KPI-like requests ("total items", "avg price") often imply adding KPIs
+    /\b(total items|number of items|item count|count of items|avg price|average price|mean price|sum of price|total price|min price|max price)\b/i.test(lower) ||
+    // "show/display" + KPI nouns should be treated as add unless it's clearly "show only" filtering
+    (!hasShowOnlySignal && showAddVerbs.test(lower) && /\b(kpi|kpis|metric|metrics|stat|stats)\b/i.test(lower))
+
+  const isAddChart =
+    (addVerbs.test(lower) && /\b(chart|graph|plot|visualization|viz|pie|bar|line|area|scatter|histogram)\b/i.test(lower)) ||
+    (!hasShowOnlySignal && showAddVerbs.test(lower) && /\b(chart|graph|plot|visualization|viz|pie|bar|line|area|scatter|histogram)\b/i.test(lower)) ||
+    // "trend over time" / "by month" implies a chart
+    /\b(trend|over time|time series|timeseries|by month|monthly)\b/i.test(lower)
+
+  const isAddImage =
+    (addVerbs.test(lower) && /\b(image|img|photo|picture|logo|banner|thumbnail)\b/i.test(lower)) ||
+    (!hasShowOnlySignal && showAddVerbs.test(lower) && /\b(image|img|photo|picture|logo|banner|thumbnail)\b/i.test(lower))
+
+  const isAddTable =
+    (addVerbs.test(lower) && /\b(table|grid|list)\b/i.test(lower)) ||
+    (!hasShowOnlySignal && showAddVerbs.test(lower) && /\b(table|grid|list)\b/i.test(lower))
+
+  const isAddText =
+    (addVerbs.test(lower) && /\b(text|heading|title|subtitle|caption|note|description)\b/i.test(lower)) ||
+    (!hasShowOnlySignal && showAddVerbs.test(lower) && /\b(text|heading|title|subtitle|caption|note|description)\b/i.test(lower))
+
+  const isRemove =
+    /\b(remove|delete|hide|get rid of|drop|take out|eliminate|clear)\b/i.test(lower) &&
+    // If user says "hide rows/items", that's more likely filtering than removing components
+    !(/\b(rows?|items?|results?)\b/i.test(lower) && hasRowSortSignal)
+
+  const isFontStyle =
+    // Explicit font words
+    /\b(font|typeface|typography)\b/i.test(lower) ||
+    // Common font-style adjectives (can be ambiguous, but useful when user is describing text look)
+    /\b(gothic|elegant|modern|bold|classic|futuristic|handwritten|serif|sans-serif|monospace|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|minimalist)\b/i.test(lower)
+
+  const isColorStyle =
+    /\b(color|colors|palette|background|border|shadow|padding|margin|spacing|size|bigger|smaller|rounded|radius|glass|blur|opacity|gradient)\b/i.test(lower) &&
+    // Prefer font intent when both are present
+    !(/\b(font|typeface|typography)\b/i.test(lower))
+
+  const isFilterSort =
+    // Core filtering/sorting language
+    hasRowSortSignal ||
+    // Phrases like "show only top 10", "only show 10"
+    /\b(top\s+\d+|bottom\s+\d+)\b/i.test(lower) ||
+    // Explicit "show only" with row-ish nouns
+    (hasShowOnlySignal && /\b(rows?|items?|results?|products?)\b/i.test(lower)) ||
+    // "by price/date" usually means sorting rows
+    (hasRowSortField && /\bby\s+(price|date|category|title)\b/i.test(lower))
+
+  const isTheme =
+    /\b(dark mode|light mode|theme|theming|brand|palette|background color|primary color)\b/i.test(lower) &&
+    !isVagueRequest(prompt)
+
+  const isLayout =
+    /\b(columns?|layout|two[-\s]?column|three[-\s]?column|grid|gap|spacing|gutter)\b/i.test(lower)
   
-  // Detect operation types
-  const isReorder = /\b(move|reorder|to top|to the top|to front|to the front|at top|at the top|to beginning|to the beginning)\b/i.test(prompt)
-  const isAddKpi = /\b(add|create|insert|show|display).*(kpi|total items|avg price|average price|count|sum)\b/i.test(prompt) || 
-                   (/\b(kpi|total items|avg price|average price|count|sum)\b/i.test(prompt) && /\b(add|create|insert|show|display)\b/i.test(prompt))
-  const isAddChart = /\b(add|create|insert|show|display).*(chart|pie chart|bar chart|line chart|area chart)\b/i.test(prompt) ||
-                     (/\b(chart|pie chart|bar chart|line chart|area chart)\b/i.test(prompt) && /\b(add|create|insert|show|display)\b/i.test(prompt))
-  const isAddImage = /\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(prompt)
-  const isAddTable = /\b(add|create|insert|show|display).*(table)\b/i.test(prompt)
-  const isAddText = /\b(add|create|insert|show|display).*(text|heading|title)\b/i.test(prompt)
-  const isRemove = /\b(remove|delete|hide|get rid of)\b/i.test(prompt)
-  const isFontStyle = /\b(font|typeface|typography|text style|gothic|elegant|modern|bold|classic|futuristic|handwritten|serif|sans-serif|monospace|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|artistic|minimalist)\b/i.test(prompt)
-  const isColorStyle = /\b(color|background|border|shadow|padding|margin|size|bigger|smaller)\b/i.test(prompt) && !isFontStyle
-  const isFilterSort = /\b(sort|filter|top \d+|show only top|by price|by date|ascending|descending)\b/i.test(prompt)
-  const isTheme = /\b(dark mode|light mode|theme|background color|primary color)\b/i.test(prompt) && !isVagueRequest(prompt)
-  const isLayout = /\b(columns|layout|two column|three column|grid)\b/i.test(prompt)
+  // Detect component mentions (for component-mention-based guidance)
+  const mentionsTable = /\b(table|tables|grid|list)\b/i.test(lower)
+  const mentionsChart = /\b(chart|charts|graph|graphs|plot|plots|visualization|viz|pie|bar|line|area|scatter|histogram)\b/i.test(lower)
+  const mentionsKpi = /\b(kpi|kpis|metric|metrics|stat|stats)\b/i.test(lower)
+  const mentionsImage = /\b(image|images|img|photo|photos|picture|pictures|logo|logos|banner|banners|thumbnail|thumbnails)\b/i.test(lower)
+  const mentionsText = /\b(text|heading|headings|title|titles|subtitle|subtitles|caption|captions|note|notes|description)\b/i.test(lower)
   
   // Determine which guidance blocks are needed
-  const needsReorderGuidance = isReorder || (/\b(at top|at the top|on top|to top|to the top|to front|to the front)\b/i.test(prompt) && (isAddKpi || isAddChart || isAddImage || isAddTable || isAddText))
+  const needsReorderGuidance =
+    isReorder ||
+    // "at top"/"to front" etc.
+    (/\b(at top|at the top|on top|to top|to the top|to front|to the front)\b/i.test(prompt) &&
+      (isAddKpi || isAddChart || isAddImage || isAddTable || isAddText)) ||
+    // Relative ordering language like "above/below/under/before/after/next to"
+    (/\b(above|below|under|beneath|over|before|after|next to|beside|in front of|behind)\b/i.test(prompt) &&
+      (isAddKpi || isAddChart || isAddImage || isAddTable || isAddText || isRemove))
   const needsKpiGuidance = isAddKpi
   const needsChartGuidance = isAddChart
   const needsImageGuidance = isAddImage
@@ -71,6 +169,11 @@ function analyzePromptIntent(prompt: string): {
     needsTopNGuidance,
     needsFontGuidance,
     needsPieChartGuidance,
+    mentionsTable,
+    mentionsChart,
+    mentionsKpi,
+    mentionsImage,
+    mentionsText,
   }
 }
 
@@ -78,23 +181,18 @@ const groq = process.env.GROQ_API_KEY ? new Groq({
   apiKey: process.env.GROQ_API_KEY,
 }) : null
 
-const SYSTEM_PROMPT = `You are UI Design Ops. Edit dashboard schema via JSON operations only.
+// Base system prompt - always included (core constraints and component types)
+const BASE_SYSTEM_PROMPT = `You are UI Design Ops. Edit dashboard schema via JSON operations only.
 
 CONSTRAINTS
 - Only presentation: layout, components, styles, sorting/filtering. Never backend/data/auth/API/db.
 - Ops: set_style, update, add_component, remove_component, move_component, replace_component, reorder_component.
 - Max 30 components. Vague requests: max 15 ops.
 - Output: { "operations": [...] } JSON only. No markdown/explanations.
+- CRITICAL: Each operation MUST have "op" field (not "type").
 
 COMPONENTS
 Types: table, chart, kpi, text, image, pie_chart, bar_chart, line_chart, area_chart, scatter_chart, radar_chart, histogram, composed_chart
-Props:
-- Tables: dataSource, columns (array like ["id","title","price"]), dataColumns (1-4). Tables automatically display images if data contains image URLs.
-- Charts: dataSource, chartType, xField, yField, color, aggregateFunction ("count"|"sum"|"avg")
-- KPIs: dataSource, field, label, calculation ("sum"|"avg"|"count"|"min"|"max"), format ("currency")
-- Text: content, heading
-- Images: src (required, user-provided URL only), alt (alt text), objectFit (default "contain" in style), objectPosition (position string), lazy (boolean, default true)
-- CRITICAL for Images: ONLY use URLs that the user explicitly provides in their request. NEVER generate, create, or invent image URLs. If user requests an image without providing a URL, DO NOT create an image component.
 
 STYLES (apply via set_style or component.style)
 Typography: fontSize, fontFamily, fontWeight, fontStyle, textAlign, textDecoration, letterSpacing, lineHeight, wordSpacing, textTransform, whiteSpace
@@ -107,54 +205,179 @@ Display: display, flexDirection, alignItems, justifyContent, objectFit, objectPo
 Transitions: transition, transitionDuration, transitionTimingFunction
 Advanced: transform, cursor, pointerEvents, userSelect, outline, outlineOffset, overflowWrap, wordBreak, zIndex
 
-FONTS: Use Google Fonts names: "Roboto", "Montserrat", "Open Sans", "Lato", "Poppins", "Raleway", "Oswald", "Playfair Display", "Merriweather", "Bebas Neue", "Dancing Script", etc.
-System fonts: "system-ui", "sans-serif", "serif", "monospace"
-Font style mappings: "gothic"→"Oswald"/"Bebas Neue", "elegant"→"Playfair Display"/"Merriweather", "modern"→"Roboto"/"Montserrat", "handwritten"→"Dancing Script", "bold"→"Bebas Neue"/"Oswald", "classic"→"Times New Roman"/"serif", "futuristic"→"Orbitron"/"Rajdhani"
-If user describes a font style (e.g., "gothic", "elegant", "modern"), map to appropriate Google Font name.
-
 DATA SOURCES
 - "/api/data": Raw items (id, title, category, price, date). Use for: KPIs, tables, charts by category/field.
 - "/api/data/summary": Time series (month, total, count, avgPrice). DEFAULT for charts unless grouping by field.
 
-RULES
-- Charts default: dataSource="/api/data/summary", xField="month", yField="total"
-- "pie chart by category" or "chart by category": ADD a new pie chart component (don't reference existing)
-- "by category": means ADD chart with dataSource="/api/data", xField="category", aggregateFunction="count"
-- KPIs: ALWAYS include dataSource="/api/data", calculation ("count"/"avg"/"sum"), field ("price" if avg/sum), label
-- "KPIs at top" or "KPIs at the top": After adding KPIs, use reorder_component to move them to newIndex 0, 1, etc. (move to beginning)
-- Sorting: "filters/sortBy" and "filters/sortOrder", NOT props.columns
-- "top 10" or "show only top 10": Set "filters/limit" to 10 AND "filters/sortBy" to "price", "filters/sortOrder" to "desc" (highest price by default)
-- Filtering: "filters/limit" (number) limits table rows. "top N" means limit N rows sorted by price descending.
-- Paths: "theme/mode", "layout/columns", "components[id=X]/style/Y", "filters/sortBy", "filters/sortOrder", "filters/limit"
-- CRITICAL: Always include dataSource for charts/KPIs - never omit it. KPIs without dataSource won't show data.
+PATHS
+- "theme/mode", "layout/columns", "components[id=X]/style/Y", "filters/sortBy", "filters/sortOrder", "filters/limit"`
 
-VAGUE REQUESTS ("like X")
-1. Identify brand, PRIMARY UI COLOR (buttons/CTAs, not logo), theme mode, layout
-2. Generate operations in order:
-   a) Theme: mode, backgroundColor, primaryColor, textColor, borderColor, cardBackgroundColor
-   b) Layout: columns, cardStyle
-   c) Apply theme colors to ALL existing components:
-      - Charts: set style.color to primaryColor
-      - Tables: set style.textColor to textColor (or primaryColor)
-      - KPIs: set style.valueColor to textColor (or primaryColor), style.backgroundColor to cardBackgroundColor
-3. Limit to 15 operations for vague requests (to prevent timeouts). Examples: Netflix #e50914, Spotify #1db954
-4. For each existing component, add set_style operations to apply theme colors
+// Build dynamic system prompt based on intent analysis
+function buildSystemPrompt(
+  intent: ReturnType<typeof analyzePromptIntent>,
+  vague: boolean,
+  hasImageUrls: boolean
+): string {
+  let prompt = BASE_SYSTEM_PROMPT
+  
+  // Add component props when components are mentioned (component-mention-based)
+  const needsComponentProps = intent.mentionsTable || intent.mentionsChart || intent.mentionsKpi || 
+                              intent.mentionsImage || intent.mentionsText ||
+                              intent.isRemove || intent.isColorStyle || intent.isTheme || intent.isLayout
+  
+  if (needsComponentProps) {
+    prompt += `\n\nCOMPONENT PROPS:`
+    
+    if (intent.mentionsTable) {
+      prompt += `\n- Tables: dataSource, columns (array like ["id","title","price"]), dataColumns (1-4). Tables automatically display images if data contains image URLs.`
+    }
+    
+    if (intent.mentionsChart) {
+      prompt += `\n- Charts: dataSource, chartType, xField, yField, color, aggregateFunction ("count"|"sum"|"avg")`
+    }
+    
+    if (intent.mentionsKpi) {
+      prompt += `\n- KPIs: dataSource, field, label, calculation ("sum"|"avg"|"count"|"min"|"max"), format ("currency")`
+    }
+    
+    if (intent.mentionsText) {
+      prompt += `\n- Text: content, heading`
+    }
+    
+    if (intent.mentionsImage || intent.needsImageGuidance || hasImageUrls) {
+      prompt += `\n- Images: src (required, user-provided URL only), alt (alt text), objectFit (default "contain" in style), objectPosition (position string), lazy (boolean, default true)`
+      prompt += `\n- CRITICAL for Images: ONLY use URLs that the user explicitly provides in their request. NEVER generate, create, or invent image URLs. If user requests an image without providing a URL, DO NOT create an image component.`
+    }
+  }
 
-EXAMPLES
-Add chart: {"operations":[{"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"width":"100%","height":"400px"}}}]}
-Add KPI: {"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}}]}
-Add image (user provided URL): {"operations":[{"op":"add_component","component":{"id":"img1","type":"image","props":{"src":"[IMAGE_URL_1]","alt":"Description"},"style":{"width":"100%","height":"300px","borderRadius":"8px","objectFit":"contain"}}}]}
-Two-column with KPIs at top: {"operations":[{"op":"update","path":"layout/columns","value":2},{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}},{"op":"add_component","component":{"id":"kpi2","type":"kpi","props":{"dataSource":"/api/data","calculation":"avg","field":"price","label":"Avg Price"},"style":{"width":"100%"}}},{"op":"reorder_component","id":"kpi1","newIndex":0},{"op":"reorder_component","id":"kpi2","newIndex":1}]}
-Dark mode: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}
-Change font: {"operations":[{"op":"set_style","path":"theme/fontFamily","value":"Roboto"},{"op":"set_style","path":"components[id=table1]/style/fontFamily","value":"Montserrat"}]}
-Background image: {"operations":[{"op":"set_style","path":"components[id=kpi1]/style/backgroundImage","value":"url('https://example.org/real-background.jpg')"},{"op":"set_style","path":"components[id=kpi1]/style/backgroundSize","value":"cover"}]}
-Gradient background: {"operations":[{"op":"set_style","path":"components[id=text1]/style/backgroundImage","value":"linear-gradient(to right, #667eea, #764ba2)"}]}
-Advanced typography: {"operations":[{"op":"set_style","path":"components[id=text1]/style/letterSpacing","value":"0.1em"},{"op":"set_style","path":"components[id=text1]/style/lineHeight","value":"1.8"},{"op":"set_style","path":"components[id=text1]/style/textTransform","value":"uppercase"}]}
-Reorder: {"operations":[{"op":"update","path":"layout/columns","value":1},{"op":"reorder_component","id":"chart1","newIndex":0}]}
-Sort: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"}]}
-Top 10: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"},{"op":"update","path":"filters/limit","value":10}]}
-Add pie chart by category: {"operations":[{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"width":"100%","height":"400px"}}}]}
-Netflix style: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"},{"op":"set_style","path":"theme/primaryColor","value":"#e50914"},{"op":"set_style","path":"theme/textColor","value":"#ffffff"},{"op":"set_style","path":"theme/cardBackgroundColor","value":"#1f1f1f"},{"op":"set_style","path":"components[id=chart1]/style/color","value":"#e50914"},{"op":"set_style","path":"components[id=table1]/style/textColor","value":"#e50914"},{"op":"set_style","path":"components[id=kpi1]/style/valueColor","value":"#e50914"},{"op":"set_style","path":"components[id=kpi1]/style/backgroundColor","value":"#1f1f1f"}]}`.trim();
+  // Lightweight, generic mapping guidance for common component color requests.
+  // (This is not hard-coded to a specific table id; model should use an existing table component id from schema.)
+  if (intent.isColorStyle) {
+    prompt += `\n\nSTYLE TARGETING:`
+    prompt += `\n- If user says "make the table text <color>", set components[id=<TABLE_ID>]/style/textColor to <color>.`
+    prompt += `\n- If user says "make the table background <color>", set components[id=<TABLE_ID>]/style/backgroundColor to <color>.`
+    prompt += `\n- Use an existing table component id from schema (e.g. table1).`
+  }
+  
+  // Add font information only if needed
+  if (intent.needsFontGuidance) {
+    prompt += `\n\nFONTS: Use Google Fonts names: "Roboto", "Montserrat", "Open Sans", "Lato", "Poppins", "Raleway", "Oswald", "Playfair Display", "Merriweather", "Bebas Neue", "Dancing Script", etc.`
+    prompt += `\nSystem fonts: "system-ui", "sans-serif", "serif", "monospace"`
+    prompt += `\nFont style mappings: "gothic"→"Oswald"/"Bebas Neue", "elegant"→"Playfair Display"/"Merriweather", "modern"→"Roboto"/"Montserrat", "handwritten"→"Dancing Script", "bold"→"Bebas Neue"/"Oswald", "classic"→"Times New Roman"/"serif", "futuristic"→"Orbitron"/"Rajdhani"`
+    prompt += `\nIf user describes a font style (e.g., "gothic", "elegant", "modern"), map to appropriate Google Font name.`
+  }
+  
+  // Add component-specific rules only when needed
+  if (intent.mentionsChart || intent.needsPieChartGuidance) {
+    prompt += `\n\nCHART RULES:`
+    prompt += `\n- Charts default: dataSource="/api/data/summary", xField="month", yField="total"`
+    if (intent.needsPieChartGuidance) {
+      prompt += `\n- "pie chart by category" or "chart by category": ADD a new pie chart component (don't reference existing)`
+      prompt += `\n- "by category": means ADD chart with dataSource="/api/data", xField="category", aggregateFunction="count"`
+    }
+    prompt += `\n- CRITICAL: Always include dataSource for charts - never omit it.`
+  }
+  
+  if (intent.mentionsKpi || intent.needsKpiGuidance) {
+    prompt += `\n\nKPI RULES:`
+    prompt += `\n- KPIs: ALWAYS include dataSource="/api/data", calculation ("count"/"avg"/"sum"), field ("price" if avg/sum), label`
+    prompt += `\n- CRITICAL: KPIs without dataSource won't show data.`
+    if (intent.needsReorderGuidance && intent.isAddKpi) {
+      prompt += `\n- "KPIs at top" or "KPIs at the top": After adding KPIs, use reorder_component to move them to newIndex 0, 1, etc. (move to beginning)`
+    }
+  }
+  
+  if (intent.mentionsTable) {
+    prompt += `\n\nTABLE MODIFICATIONS:`
+    prompt += `\n- To change visible columns: "only show X and Y" or "show only X and Y" means update components[id=TABLE_ID]/props/columns to ["X","Y"]`
+    prompt += `\n- Use existing table component id from schema (e.g. table1)`
+    prompt += `\n- Style changes: use components[id=TABLE_ID]/style/textColor, components[id=TABLE_ID]/style/backgroundColor, etc.`
+    prompt += `\n- Filtering/sorting rows: use filters/sortBy, filters/sortOrder, filters/limit (NOT props.columns)`
+  }
+  
+  if (intent.isFilterSort || intent.needsTopNGuidance) {
+    prompt += `\n\nFILTERING/SORTING RULES:`
+    prompt += `\n- Sorting: "filters/sortBy" and "filters/sortOrder", NOT props.columns`
+    prompt += `\n- "top 10" or "show only top 10": Set "filters/limit" to 10 AND "filters/sortBy" to "price", "filters/sortOrder" to "desc" (highest price by default)`
+    prompt += `\n- Filtering: "filters/limit" (number) limits table rows. "top N" means limit N rows sorted by price descending.`
+  }
+  
+  // Add vague request instructions only if vague
+  if (vague) {
+    prompt += `\n\nVAGUE REQUESTS ("like X"):`
+    prompt += `\n1. Identify brand, PRIMARY UI COLOR (buttons/CTAs, not logo), theme mode, layout`
+    prompt += `\n2. Generate operations in order:`
+    prompt += `\n   a) Theme: mode, backgroundColor, primaryColor, textColor, borderColor, cardBackgroundColor`
+    prompt += `\n   b) Layout: columns, cardStyle`
+    prompt += `\n   c) Apply theme colors to ALL existing components:`
+    prompt += `\n      - Charts: set style.color to primaryColor`
+    prompt += `\n      - Tables: set style.textColor to textColor (or primaryColor)`
+    prompt += `\n      - KPIs: set style.valueColor to textColor (or primaryColor), style.backgroundColor to cardBackgroundColor`
+    prompt += `\n3. Limit to 15 operations for vague requests (to prevent timeouts). Examples: Netflix #e50914, Spotify #1db954`
+    prompt += `\n4. For each existing component, add set_style operations to apply theme colors`
+    prompt += `\n5. CRITICAL: Do NOT add image components unless the user provided an explicit URL (or placeholder mapped to a URL).`
+  }
+  
+  // Add examples only for relevant operations
+  const examples: string[] = []
+  
+  if (intent.mentionsChart || intent.needsChartGuidance) {
+    examples.push(`Add chart: {"operations":[{"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"width":"100%","height":"400px"}}}]}`)
+    if (intent.needsPieChartGuidance) {
+      examples.push(`Add pie chart by category: {"operations":[{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"width":"100%","height":"400px"}}}]}`)
+    }
+  }
+  
+  if (intent.mentionsKpi || intent.needsKpiGuidance) {
+    examples.push(`Add KPI: {"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}}]}`)
+    if (intent.needsReorderGuidance && intent.isAddKpi) {
+      examples.push(`Two-column with KPIs at top: {"operations":[{"op":"update","path":"layout/columns","value":2},{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}},{"op":"add_component","component":{"id":"kpi2","type":"kpi","props":{"dataSource":"/api/data","calculation":"avg","field":"price","label":"Avg Price"},"style":{"width":"100%"}}},{"op":"reorder_component","id":"kpi1","newIndex":0},{"op":"reorder_component","id":"kpi2","newIndex":1}]}`)
+    }
+  }
+  
+  if (intent.mentionsTable) {
+    examples.push(`Change table columns: {"operations":[{"op":"update","path":"components[id=table1]/props/columns","value":["price","date"]}]}`)
+  }
+  
+  if (intent.isAddImage || intent.needsImageGuidance || hasImageUrls) {
+    examples.push(`Add image (user provided URL): {"operations":[{"op":"add_component","component":{"id":"img1","type":"image","props":{"src":"[IMAGE_URL_1]","alt":"Description"},"style":{"width":"100%","height":"300px","borderRadius":"8px","objectFit":"contain"}}}]}`)
+  }
+  
+  if (intent.isTheme || intent.isColorStyle) {
+    examples.push(`Dark mode: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}`)
+  }
+  
+  if (intent.needsFontGuidance) {
+    examples.push(`Change font: {"operations":[{"op":"set_style","path":"theme/fontFamily","value":"Roboto"},{"op":"set_style","path":"components[id=table1]/style/fontFamily","value":"Montserrat"}]}`)
+  }
+  
+  if (intent.isColorStyle) {
+    examples.push(`Background image: {"operations":[{"op":"set_style","path":"components[id=kpi1]/style/backgroundImage","value":"url('https://example.org/real-background.jpg')"},{"op":"set_style","path":"components[id=kpi1]/style/backgroundSize","value":"cover"}]}`)
+    examples.push(`Gradient background: {"operations":[{"op":"set_style","path":"components[id=text1]/style/backgroundImage","value":"linear-gradient(to right, #667eea, #764ba2)"}]}`)
+    if (intent.needsFontGuidance) {
+      examples.push(`Advanced typography: {"operations":[{"op":"set_style","path":"components[id=text1]/style/letterSpacing","value":"0.1em"},{"op":"set_style","path":"components[id=text1]/style/lineHeight","value":"1.8"},{"op":"set_style","path":"components[id=text1]/style/textTransform","value":"uppercase"}]}`)
+    }
+  }
+  
+  if (intent.isReorder || intent.needsReorderGuidance) {
+    examples.push(`Reorder: {"operations":[{"op":"update","path":"layout/columns","value":1},{"op":"reorder_component","id":"chart1","newIndex":0}]}`)
+  }
+  
+  if (intent.isFilterSort || intent.needsTopNGuidance) {
+    examples.push(`Sort: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"}]}`)
+    examples.push(`Top 10: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"},{"op":"update","path":"filters/limit","value":10}]}`)
+  }
+  
+  if (vague) {
+    examples.push(`Netflix style: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"},{"op":"set_style","path":"theme/primaryColor","value":"#e50914"},{"op":"set_style","path":"theme/textColor","value":"#ffffff"},{"op":"set_style","path":"theme/cardBackgroundColor","value":"#1f1f1f"},{"op":"set_style","path":"components[id=chart1]/style/color","value":"#e50914"},{"op":"set_style","path":"components[id=table1]/style/textColor","value":"#e50914"},{"op":"set_style","path":"components[id=kpi1]/style/valueColor","value":"#e50914"},{"op":"set_style","path":"components[id=kpi1]/style/backgroundColor","value":"#1f1f1f"}]}`)
+  }
+  
+  if (examples.length > 0) {
+    prompt += `\n\nEXAMPLES\n${examples.join('\n')}`
+  }
+  
+  return prompt.trim()
+}
 
 export async function generateDesignOperations(
   prompt: string,
@@ -226,6 +449,9 @@ export async function generateDesignOperations(
     // Analyze prompt intent to determine which guidance blocks are needed
     const intent = analyzePromptIntent(processedPrompt)
     
+    // Build dynamic system prompt based on intent (only include relevant sections)
+    const dynamicSystemPrompt = buildSystemPrompt(intent, vague, extractedUrls.length > 0)
+    
     // Build user prompt - URLs are now placeholders
     let userPrompt = `Current schema: ${finalSchemaJson}
 
@@ -290,6 +516,13 @@ Now generate operations based on this analysis. Limit to 15 operations maximum. 
       userPrompt += `\n\nNOTE: "top N" means filter the table to show only N rows. Set filters/limit to N, filters/sortBy to "price", and filters/sortOrder to "desc" (highest price first). Do NOT add horizontal scrolling or change table layout.`
     }
     
+    // Table column guidance - when table is mentioned and user wants to change columns
+    if (intent.mentionsTable && !intent.isAddTable && !intent.isRemove && !intent.isFilterSort) {
+      if (/\b(only show|show only|display only|columns?)\b/i.test(processedPrompt)) {
+        userPrompt += `\n\nNOTE: "have the table only show X and Y" or "table only show X and Y" means update the table's columns prop. Use: {"op":"update","path":"components[id=TABLE_ID]/props/columns","value":["X","Y"]}. Use the existing table component id from the schema.`
+      }
+    }
+    
     // Font guidance - only needed when changing fonts or in vague requests that might need fonts
     if (intent.needsFontGuidance) {
       userPrompt += `\n\nNOTE: Font style interpretation:
@@ -316,17 +549,17 @@ Return format: { "operations": [...] }`
 
     // Calculate total token estimate AFTER all content is added
     // Use very conservative estimate: ~2.5 chars per token to account for tokenization overhead
-    const systemPromptSize = new Blob([SYSTEM_PROMPT]).size
+    const systemPromptSize = new Blob([dynamicSystemPrompt]).size
     const userPromptSize = new Blob([userPrompt]).size
     const totalSize = systemPromptSize + userPromptSize
     const totalTokens = Math.round(totalSize / 2.5) // Very conservative: 2.5 chars per token
     
     // If total is too large, use a condensed system prompt
     // Groq limit is 6000 tokens, so we use 5500 as threshold to leave buffer
-    let finalSystemPrompt = SYSTEM_PROMPT
+    let finalSystemPrompt = dynamicSystemPrompt
     let finalUserPrompt = userPrompt
     if (totalTokens > 5500) { // Increased threshold: 5500 (was 4000) - only condense when truly necessary
-      // Condensed system prompt - remove examples and shorten descriptions
+      // Condensed system prompt - minimal version for extreme cases
       finalSystemPrompt = `UI Design Ops. Edit dashboard via JSON ops only.
 
 CONSTRAINTS: Presentation only. Ops: set_style, update, add_component, remove_component, move_component, replace_component, reorder_component. Max 30 components. Output: {"operations":[...]} JSON only. CRITICAL: Each operation MUST have "op" field (not "type").
@@ -339,11 +572,14 @@ STYLES: fontSize, fontFamily, fontWeight, color, backgroundColor, textColor, bor
 
 DATA: "/api/data" for KPIs/tables/charts by field. "/api/data/summary" DEFAULT for charts.
 
-RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="total". "by category": ADD chart with dataSource="/api/data", xField="category", aggregateFunction="count". KPIs: ALWAYS include dataSource="/api/data". "KPIs at top": After adding, use reorder_component to move to newIndex 0,1. "top N": Set filters/limit=N, filters/sortBy="price", filters/sortOrder="desc". Paths: "theme/mode", "layout/columns", "components[id=X]/style/Y", "filters/sortBy", "filters/sortOrder", "filters/limit".
-
-VAGUE REQUESTS: Identify brand, PRIMARY UI COLOR (#hex), theme mode (dark/light). Generate: 1) Theme colors (mode, backgroundColor, primaryColor, textColor, cardBackgroundColor), 2) Apply to ALL components (charts→style.color, tables→style.textColor, KPIs→style.valueColor+backgroundColor). Limit 15 ops. Examples: Netflix #e50914 dark, Spotify #1db954 dark.
-
-FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"image","props":{"src":"[IMAGE_URL_1]"}}}]}`
+RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="total". "by category": ADD chart with dataSource="/api/data", xField="category", aggregateFunction="count". KPIs: ALWAYS include dataSource="/api/data". "KPIs at top": After adding, use reorder_component to move to newIndex 0,1. "top N": Set filters/limit=N, filters/sortBy="price", filters/sortOrder="desc". Paths: "theme/mode", "layout/columns", "components[id=X]/style/Y", "filters/sortBy", "filters/sortOrder", "filters/limit".`
+      
+      // Add vague request guidance if needed
+      if (vague) {
+        finalSystemPrompt += `\n\nVAGUE REQUESTS: Identify brand, PRIMARY UI COLOR (#hex), theme mode (dark/light). Generate: 1) Theme colors (mode, backgroundColor, primaryColor, textColor, cardBackgroundColor), 2) Apply to ALL components (charts→style.color, tables→style.textColor, KPIs→style.valueColor+backgroundColor). Limit 15 ops. Examples: Netflix #e50914 dark, Spotify #1db954 dark.`
+      }
+      
+      finalSystemPrompt += `\n\nFORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"image","props":{"src":"[IMAGE_URL_1]"}}}]}`
       
       // Always reduce user prompt when we condense system prompt to be safe
       // Remove verbose guidance, keep only essential
@@ -364,6 +600,10 @@ FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"im
     } else {
       finalUserPrompt = userPrompt
     }
+
+    // Trim both prompts before sending to API to remove any leading/trailing whitespace
+    finalSystemPrompt = finalSystemPrompt.trim()
+    finalUserPrompt = finalUserPrompt.trim()
 
     if (!groq) {
       throw new Error('No AI provider configured. Please set GROQ_API_KEY in your environment variables')
@@ -436,6 +676,59 @@ FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"im
     const validOps = ['set_style', 'update', 'add_component', 'remove_component', 'move_component', 'replace_component', 'reorder_component']
     let validatedOperations: Operation[] = []
 
+    // Coerce known numeric schema fields (AI sometimes returns numeric values as strings)
+    // This prevents schema validation failures like: layout.columns/gap expected number, received string.
+    const coerceNumberForPath = (path: string, value: any): { ok: true; value: number } | { ok: false } => {
+      if (typeof value === 'number' && Number.isFinite(value)) return { ok: true, value }
+      if (typeof value !== 'string') return { ok: false }
+
+      const trimmed = value.trim()
+      if (!trimmed) return { ok: false }
+
+      // Accept: "16", "16.5", "16px"
+      const match = trimmed.match(/-?\d+(\.\d+)?/)
+      if (!match) return { ok: false }
+
+      const num = Number(match[0])
+      if (!Number.isFinite(num)) return { ok: false }
+
+      // Columns should be positive integers
+      if (path === 'layout/columns') {
+        return { ok: true, value: Math.max(1, Math.round(num)) }
+      }
+
+      // Gap/limit should be non-negative numbers / integers
+      if (path === 'layout/gap') {
+        return { ok: true, value: Math.max(0, Math.round(num)) }
+      }
+      if (path === 'filters/limit') {
+        return { ok: true, value: Math.max(1, Math.round(num)) }
+      }
+
+      return { ok: true, value: num }
+    }
+
+    // Normalize common "almost-correct" style operations into set_style ops.
+    // Examples we see from models:
+    // - { op: "set_style", id: "table1", style: { textColor: "orange" } }
+    // - { op: "set_style", componentId: "table1", style: { backgroundColor: "#000" } }
+    const expandStyleObjectToSetStyleOps = (maybeOp: any): Operation[] => {
+      const id = String(maybeOp?.id || maybeOp?.componentId || '')
+      const styleObj = maybeOp?.style
+      if (!id || !styleObj || typeof styleObj !== 'object') return []
+
+      const ops: Operation[] = []
+      for (const [key, val] of Object.entries(styleObj)) {
+        if (val === undefined) continue
+        ops.push({
+          op: 'set_style',
+          path: `components[id=${id}]/style/${key}`,
+          value: val,
+        })
+      }
+      return ops
+    }
+
     for (const op of operations) {
       if (!op || typeof op !== 'object') {
         console.warn('Skipping invalid operation:', op)
@@ -454,10 +747,31 @@ FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"im
         switch (opType) {
           case 'set_style':
             if (!op.path || op.value === undefined) {
+              // Try to salvage common alternative style shapes (id + style object)
+              const expanded = expandStyleObjectToSetStyleOps(op)
+              if (expanded.length > 0) {
+                validatedOperations.push(...expanded)
+                continue
+              }
               console.warn('Invalid set_style operation: missing path or value', op)
               continue
             }
-            validatedOperations.push({ op: 'set_style', path: String(op.path), value: op.value })
+            {
+              const path = String(op.path)
+              let value = op.value
+
+              // Coerce numeric schema fields if AI provides strings
+              if (path === 'layout/columns' || path === 'layout/gap' || path === 'filters/limit') {
+                const coerced = coerceNumberForPath(path, value)
+                if (!coerced.ok) {
+                  console.warn('Skipping set_style with invalid numeric value for path:', path, 'value:', value)
+                  continue
+                }
+                value = coerced.value
+              }
+
+              validatedOperations.push({ op: 'set_style', path, value })
+            }
             break
 
           case 'update':
@@ -465,7 +779,22 @@ FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"im
               console.warn('Invalid update operation: missing path or value', op)
               continue
             }
-            validatedOperations.push({ op: 'update', path: String(op.path), value: op.value })
+            {
+              const path = String(op.path)
+              let value = op.value
+
+              // Coerce numeric schema fields if AI provides strings
+              if (path === 'layout/columns' || path === 'layout/gap' || path === 'filters/limit') {
+                const coerced = coerceNumberForPath(path, value)
+                if (!coerced.ok) {
+                  console.warn('Skipping update with invalid numeric value for path:', path, 'value:', value)
+                  continue
+                }
+                value = coerced.value
+              }
+
+              validatedOperations.push({ op: 'update', path, value })
+            }
             break
 
           case 'add_component':
@@ -498,6 +827,16 @@ FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"im
             // Reject image components with placeholder URLs
             // Replace placeholders with actual URLs from original prompt
             if (componentType === 'image') {
+              // If src is missing, skip this operation so we don't fail downstream validation.
+              // This commonly happens on vague aesthetic prompts like "anime style" where the model tries to add an image.
+              const rawSrc = validatedComponent.props?.src
+              if (!rawSrc || typeof rawSrc !== 'string' || rawSrc.trim().length === 0) {
+                console.warn('Skipping image add_component without src (no user-provided URL).', {
+                  componentId: validatedComponent.id,
+                })
+                continue
+              }
+
               const imageSrc = validatedComponent.props?.src
               if (imageSrc && typeof imageSrc === 'string') {
                 let finalSrc = imageSrc

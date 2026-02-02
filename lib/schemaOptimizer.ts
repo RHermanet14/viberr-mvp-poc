@@ -20,8 +20,9 @@ export function getOptimizedSchema(schema: DesignSchema, prompt: string): any {
   const lower = prompt.toLowerCase()
   const cleaned = cleanSchema(schema)
   
-  // Detect vague style requests
-  const isVagueRequest = /\b(like|similar|make it|style of|look like|resemble|inspired by)\b/i.test(prompt)
+  // Detect vague style requests (broader than brand names; used for schema minimization too)
+  // NOTE: We reuse exported isVagueRequest() so behavior stays consistent across the app.
+  const isVague = isVagueRequest(prompt)
   
   // More aggressive optimization: if schema has many components, always minimize
   const hasManyComponents = cleaned.components && cleaned.components.length > 10
@@ -90,7 +91,7 @@ export function getOptimizedSchema(schema: DesignSchema, prompt: string): any {
   }
   
   // For vague requests, send minimal schema but keep all component IDs/types
-  if (isVagueRequest) {
+  if (isVague) {
     return {
       theme: cleaned.theme,
       layout: cleaned.layout,
@@ -116,6 +117,35 @@ export function getOptimizedSchema(schema: DesignSchema, prompt: string): any {
 
 // Check if request is vague (needs more processing time)
 export function isVagueRequest(prompt: string): boolean {
-  const vagueKeywords = ['like', 'similar', 'make it', 'style of', 'look like', 'resemble', 'inspired by', 'netflix', 'uber', 'spotify', 'amazon']
-  return vagueKeywords.some(keyword => prompt.toLowerCase().includes(keyword))
+  const lower = prompt.toLowerCase()
+
+  // Generic resemblance phrases (works for brands and unknown names)
+  const vaguePhrases = [
+    'make it like',
+    'make it more',
+    'similar to',
+    'style of',
+    'look like',
+    'resemble',
+    'inspired by',
+    'in the style of',
+    'feel like',
+    'vibe of',
+  ]
+  if (vaguePhrases.some(p => lower.includes(p))) return true
+
+  // Global aesthetic words (broader fallback)
+  // We ONLY treat these as vague when they are not clearly about a specific component or low-level CSS.
+  const hasAestheticWord = /\b(style|aesthetic|vibe|overall look|overall feel|look|feel)\b/.test(lower)
+  const hasComponentWord = /\b(table|chart|graph|kpi|card|button|border|header|footer|row|column|grid)\b/.test(lower)
+  const hasCssWord = /\b(border|padding|margin|font-size|background-color|px|rem|em)\b/.test(lower)
+  if (hasAestheticWord && !hasComponentWord && !hasCssWord) return true
+
+  // "<something> style" fallback (covers unknown brands and adjectives like "anime style")
+  // Exclude common component-specific usages like "table style" / "border style"
+  const isComponentStylePhrase =
+    /\b(table|chart|graph|kpi|card|button|border|header|footer|row|column|grid)\s+style\b/.test(lower)
+  if (!isComponentStylePhrase && /\b\w+\s+style\b/.test(lower)) return true
+
+  return false
 }
