@@ -308,10 +308,8 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
           break
         case 'add_component':
           if (result.components.length >= 30) {
-            // Per design spec: "Excessive components → capped with message"
             const warning = 'Maximum 30 components allowed. This component was not added.'
             warnings.push(warning)
-            console.warn('Maximum 30 components allowed')
             continue
           }
           // Check for duplicate component ID
@@ -319,7 +317,6 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
           if (existingComponent) {
             const warning = `Component with ID "${operation.component.id}" already exists. Skipping duplicate.`
             warnings.push(warning)
-            console.warn(`Duplicate component ID detected: ${operation.component.id}`)
             continue
           }
           result.components.push(operation.component)
@@ -353,7 +350,6 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
           break
       }
     } catch (error) {
-      console.warn(`Failed to apply operation ${operation.op}:`, error)
       warnings.push(`Failed to apply operation ${operation.op}: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }

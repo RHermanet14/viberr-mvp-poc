@@ -11,20 +11,6 @@ import { ImageComponent } from './ImageComponent'
 import { AIPrompt } from './AIPrompt'
 import { loadGoogleFont, extractFontNames } from '@/lib/fonts'
 
-// Helper function for agent logging (development only)
-// Note: CORS errors are expected if the agent logging server isn't running - they're harmless
-const agentLog = (data: any) => {
-  if (process.env.NODE_ENV === 'development') {
-    // Silently attempt to log - failures are expected if server isn't running
-    fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-      mode: 'no-cors', // Prevents CORS errors from appearing in console
-    }).catch(() => {}) // Silently ignore all errors
-  }
-}
-
 interface ErrorBoundaryProps {
   children: ReactNode
   schema: DesignSchema
@@ -42,9 +28,8 @@ class ErrorBoundary extends ReactComponent<ErrorBoundaryProps, { hasError: boole
     return { hasError: true, error }
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
-    // Roll back to previous schema
+  componentDidCatch(error: Error, _errorInfo: ErrorInfo) {
+    // Roll back to previous schema on error
     if (this.props.previousSchema) {
       this.props.onRollback(this.props.previousSchema)
     }
@@ -110,7 +95,6 @@ export function Dashboard() {
     // Timeout fallback - if loading takes too long, stop loading
     const timeout = setTimeout(() => {
       if (loading) {
-        console.warn('Loading timeout - stopping loading state')
         setLoading(false)
       }
     }, 10000) // 10 second timeout
@@ -127,12 +111,9 @@ export function Dashboard() {
         // Set initial previous schema as backup
         setPreviousSchema(JSON.parse(JSON.stringify(data)))
       } else {
-        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('Failed to load schema:', errorData)
         setLoading(false)
       }
-    } catch (error) {
-      console.error('Failed to load schema:', error)
+    } catch {
       setLoading(false)
     } finally {
       setLoading(false)
@@ -176,32 +157,19 @@ export function Dashboard() {
 
       if (res.ok) {
         const { schema: updatedSchema, warnings } = await res.json()
-        // #region agent log
-        agentLog({location:'Dashboard.tsx:142',message:'API response received',data:{componentCount:updatedSchema.components?.length,componentIds:updatedSchema.components?.map((c:any)=>c.id),componentTypes:updatedSchema.components?.map((c:any)=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
-        // #endregion
-        // Apply new schema (previousSchema still has the backup)
         setSchema(updatedSchema)
-        // #region agent log
-        agentLog({location:'Dashboard.tsx:144',message:'setSchema called',data:{componentCount:updatedSchema.components?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
-        // #endregion
-        // Note: previousSchema will be updated only after successful render
-        // If runtime error occurs, ErrorBoundary will roll back to previousSchema
         
-        // Display warnings to user if any (per design spec: show messages for ignored operations)
+        // Display warnings to user if any
         if (warnings && warnings.length > 0) {
-          // Set error state to show warnings (we'll style it as a warning, not an error)
           setError(warnings.join(' '))
         }
       } else {
         const errorData = await res.json()
         setError(errorData.error || 'Failed to process AI prompt')
-        // Roll back to backup
         setSchema(currentSchemaBackup)
       }
     } catch (error: any) {
-      console.error('Failed to process AI prompt:', error)
       setError(error.message || 'Failed to process AI prompt')
-      // Roll back to backup
       setSchema(currentSchemaBackup)
     }
   }
@@ -227,18 +195,14 @@ export function Dashboard() {
       })
 
       if (res.ok) {
-        // Apply default schema
         setSchema(defaultSchema)
       } else {
         const errorData = await res.json()
         setError(errorData.error || 'Failed to restore default schema')
-        // Roll back to backup
         setSchema(currentSchemaBackup)
       }
     } catch (error: any) {
-      console.error('Failed to restore default schema:', error)
       setError(error.message || 'Failed to restore default schema')
-      // Roll back to backup
       setSchema(currentSchemaBackup)
     }
   }
@@ -264,18 +228,14 @@ export function Dashboard() {
       })
 
       if (res.ok) {
-        // Apply blank schema
         setSchema(blankSchema)
       } else {
         const errorData = await res.json()
         setError(errorData.error || 'Failed to apply blank preset')
-        // Roll back to backup
         setSchema(currentSchemaBackup)
       }
     } catch (error: any) {
-      console.error('Failed to apply blank preset:', error)
       setError(error.message || 'Failed to apply blank preset')
-      // Roll back to backup
       setSchema(currentSchemaBackup)
     }
   }
@@ -301,18 +261,14 @@ export function Dashboard() {
       })
 
       if (res.ok) {
-        // Apply dark default schema
         setSchema(darkDefaultSchema)
       } else {
         const errorData = await res.json()
         setError(errorData.error || 'Failed to apply dark default preset')
-        // Roll back to backup
         setSchema(currentSchemaBackup)
       }
     } catch (error: any) {
-      console.error('Failed to apply dark default preset:', error)
       setError(error.message || 'Failed to apply dark default preset')
-      // Roll back to backup
       setSchema(currentSchemaBackup)
     }
   }
@@ -338,30 +294,17 @@ export function Dashboard() {
       })
 
       if (res.ok) {
-        // Apply dark blank schema
         setSchema(darkBlankSchema)
       } else {
         const errorData = await res.json()
         setError(errorData.error || 'Failed to apply dark blank preset')
-        // Roll back to backup
         setSchema(currentSchemaBackup)
       }
     } catch (error: any) {
-      console.error('Failed to apply dark blank preset:', error)
       setError(error.message || 'Failed to apply dark blank preset')
-      // Roll back to backup
       setSchema(currentSchemaBackup)
     }
   }
-
-  // #region agent log
-  // Log schema changes - MUST be before any conditional returns (Rules of Hooks)
-  useEffect(() => {
-    if (schema) {
-      agentLog({location:'Dashboard.tsx:203',message:'Dashboard render with schema',data:{componentCount:schema.components.length,componentIds:schema.components.map(c=>c.id),componentTypes:schema.components.map(c=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
-    }
-  }, [schema]);
-  // #endregion
 
   // Load Google Fonts when schema changes
   useEffect(() => {
@@ -723,26 +666,20 @@ export function Dashboard() {
               gridAutoFlow: 'row',
             }}
           >
-            {schema.components.map((component, index) => {
-              // #region agent log
-              const duplicateIds = schema.components.filter(c => c.id === component.id);
-              agentLog({location:'Dashboard.tsx:337',message:'Mapping component for render',data:{componentId:component.id,componentType:component.type,index,totalComponents:schema.components.length,duplicateCount:duplicateIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})
-              // #endregion
-              return (
-                <ComponentRenderer
-                  key={component.id}
-                  component={component}
-                  schema={schema}
-                  filters={schema.filters}
-                  onError={(error) => {
-                    setError(`Component error: ${error.message}. Rolling back to previous design.`)
-                    if (previousSchema) {
-                      setSchema(previousSchema)
-                    }
-                  }}
-                />
-              )
-            })}
+            {schema.components.map((component) => (
+              <ComponentRenderer
+                key={component.id}
+                component={component}
+                schema={schema}
+                filters={schema.filters}
+                onError={(error) => {
+                  setError(`Component error: ${error.message}. Rolling back to previous design.`)
+                  if (previousSchema) {
+                    setSchema(previousSchema)
+                  }
+                }}
+              />
+            ))}
           </div>
         </ErrorBoundary>
       </div>
@@ -912,11 +849,7 @@ function ComponentRenderer({
     },
   }
 
-  // Wrap component rendering in error boundary
   try {
-    // #region agent log
-    agentLog({location:'Dashboard.tsx:379',message:'ComponentRenderer switch entry',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})
-    // #endregion
     switch (component.type) {
       case 'table':
         return (
@@ -933,9 +866,6 @@ function ComponentRenderer({
       case 'radar_chart':
       case 'histogram':
       case 'composed_chart':
-        // #region agent log
-        agentLog({location:'Dashboard.tsx:396',message:'Chart case matched, rendering DataChart',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})
-        // #endregion
         return (
           <div style={style}>
             <DataChart component={enhancedComponent} />

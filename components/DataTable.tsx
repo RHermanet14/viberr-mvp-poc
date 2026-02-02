@@ -58,8 +58,8 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
           
           setData(items)
         }
-      } catch (error) {
-        console.error('Failed to fetch table data:', error)
+      } catch {
+        // Silently handle fetch errors
       } finally {
         setLoading(false)
       }
@@ -77,7 +77,6 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
   if (!Array.isArray(columns)) {
     // If columns is not an array, fall back to data keys or empty array
     columns = data.length > 0 ? Object.keys(data[0]) : []
-    console.warn('Table columns prop must be an array. Falling back to data keys.')
   }
   
   const dataColumns = component.props.dataColumns || 1 // Number of columns to split data into (1 = single column, 2 = two columns, etc.)

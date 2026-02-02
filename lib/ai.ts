@@ -229,8 +229,7 @@ Focus on visual design elements that can be replicated in a dashboard UI. Return
 
       const styleDescription = completion.choices[0]?.message?.content || ''
       return styleDescription.trim()
-    } catch (openaiError: any) {
-      console.error('OpenAI vision analysis failed, trying Groq:', openaiError)
+    } catch {
       // Fall through to Groq fallback
     }
   }
@@ -254,8 +253,7 @@ Focus on visual design elements that can be replicated in a dashboard UI. Return
 
     const styleDescription = completion.choices[0]?.message?.content || ''
     return styleDescription.trim()
-  } catch (error: any) {
-    console.error('All vision analysis methods failed:', error)
+  } catch {
     // Fallback: return generic description
     return 'Image uploaded for style reference. Apply modern, clean aesthetic with appropriate colors and typography.'
   }
@@ -489,8 +487,7 @@ export async function generateDesignOperations(
         try {
           const styleDescription = await analyzeImageStyle(imageBase64)
           uploadedImageStyles.push(styleDescription)
-        } catch (error: any) {
-          console.error('Failed to analyze image:', error)
+        } catch {
           // Continue with other images even if one fails
         }
       }
@@ -874,14 +871,12 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
 
     for (const op of operations) {
       if (!op || typeof op !== 'object') {
-        console.warn('Skipping invalid operation:', op)
         continue
       }
 
       // Handle both "op" and "type" fields (AI sometimes uses "type" instead of "op")
       const opType = op.op || op.type
       if (!opType || !validOps.includes(opType)) {
-        console.warn('Skipping operation with invalid op type:', opType, 'Full op:', op)
         continue
       }
 
@@ -896,7 +891,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
                 validatedOperations.push(...expanded)
                 continue
               }
-              console.warn('Invalid set_style operation: missing path or value', op)
               continue
             }
             {
@@ -907,7 +901,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
               if (path === 'layout/columns' || path === 'layout/gap' || path === 'filters/limit') {
                 const coerced = coerceNumberForPath(path, value)
                 if (!coerced.ok) {
-                  console.warn('Skipping set_style with invalid numeric value for path:', path, 'value:', value)
                   continue
                 }
                 value = coerced.value
@@ -919,7 +912,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
 
           case 'update':
             if (!op.path || op.value === undefined) {
-              console.warn('Invalid update operation: missing path or value', op)
               continue
             }
             {
@@ -930,7 +922,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
               if (path === 'layout/columns' || path === 'layout/gap' || path === 'filters/limit') {
                 const coerced = coerceNumberForPath(path, value)
                 if (!coerced.ok) {
-                  console.warn('Skipping update with invalid numeric value for path:', path, 'value:', value)
                   continue
                 }
                 value = coerced.value
@@ -944,20 +935,12 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
             // Handle both op.component and direct component structure
             const component = op.component || op
             if (!component || !component.id || !component.type) {
-              console.warn('Invalid add_component operation: missing component, id, or type', {
-                hasComponent: !!op.component,
-                hasDirectComponent: !!op,
-                componentId: component?.id,
-                componentType: component?.type,
-                fullOp: op
-              })
               continue
             }
             // Ensure component has required props structure
             const componentType = String(component.type)
             const allowedTypes = ['table', 'chart', 'kpi', 'text', 'image', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart'] as const
             if (!allowedTypes.includes(componentType as any)) {
-              console.warn('Invalid component type:', componentType, 'Allowed types:', allowedTypes)
               continue
             }
             const validatedComponent: Component = {
@@ -970,13 +953,9 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
             // Reject image components with placeholder URLs
             // Replace placeholders with actual URLs from original prompt
             if (componentType === 'image') {
-              // If src is missing, skip this operation so we don't fail downstream validation.
-              // This commonly happens on vague aesthetic prompts like "anime style" where the model tries to add an image.
+              // If src is missing, skip this operation
               const rawSrc = validatedComponent.props?.src
               if (!rawSrc || typeof rawSrc !== 'string' || rawSrc.trim().length === 0) {
-                console.warn('Skipping image add_component without src (no user-provided URL).', {
-                  componentId: validatedComponent.id,
-                })
                 continue
               }
 
@@ -1046,7 +1025,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
                   'images.unsplash.com/photo-',
                 ]
                 if (placeholderPatterns.some(pattern => lowerSrc.includes(pattern))) {
-                  console.warn('Rejecting image component with placeholder URL:', finalSrc)
                   continue
                 }
               }
@@ -1065,7 +1043,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
 
           case 'remove_component':
             if (!op.id) {
-              console.warn('Invalid remove_component operation: missing id', op)
               continue
             }
             validatedOperations.push({ op: 'remove_component', id: String(op.id) })
@@ -1074,7 +1051,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
           case 'replace_component':
             const replaceComponent = op.component || op
             if (!op.id || !replaceComponent || !replaceComponent.id || !replaceComponent.type) {
-              console.warn('Invalid replace_component operation: missing id or component', op)
               continue
             }
             validatedOperations.push({ op: 'replace_component', id: String(op.id), component: replaceComponent })
@@ -1082,7 +1058,6 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
 
           case 'move_component':
             if (!op.id || !op.position || typeof op.position.x !== 'number' || typeof op.position.y !== 'number') {
-              console.warn('Invalid move_component operation: missing id or position', op)
               continue
             }
             validatedOperations.push({
@@ -1099,14 +1074,12 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
 
           case 'reorder_component':
             if (!op.id || typeof op.newIndex !== 'number') {
-              console.warn('Invalid reorder_component operation: missing id or newIndex', op)
               continue
             }
             validatedOperations.push({ op: 'reorder_component', id: String(op.id), newIndex: op.newIndex })
             break
         }
-      } catch (validationError) {
-        console.warn('Error validating operation:', op, validationError)
+      } catch {
         continue
       }
     }
@@ -1129,13 +1102,11 @@ RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="t
     const maxOperations = vague ? 15 : 30
     
     if (validatedOperations.length > maxOperations) {
-      console.warn(`Limiting operations from ${validatedOperations.length} to ${maxOperations} for ${vague ? 'vague' : 'complex'} request`)
       validatedOperations = validatedOperations.slice(0, maxOperations)
     }
 
     return validatedOperations
   } catch (error) {
-    console.error('AI generation error:', error)
     throw error
   }
 }

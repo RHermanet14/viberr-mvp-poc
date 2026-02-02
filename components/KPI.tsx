@@ -70,8 +70,8 @@ export function KPI({ component, theme }: KPIProps) {
           
           setValue(calculatedValue)
         }
-      } catch (error) {
-        console.error('Failed to fetch KPI data:', error)
+      } catch {
+        // Silently handle fetch errors
       } finally {
         setLoading(false)
       }

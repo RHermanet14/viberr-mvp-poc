@@ -235,7 +235,6 @@ export function validateComponentIds(operations: Operation[], schema: DesignSche
       if (!allValidComponentIds.has(op.id)) {
         // Per design spec: ignore with warning instead of rejecting
         warnings.push(`Operation ${op.op} references unknown component ID: ${op.id}. This operation was ignored.`)
-        console.warn(`Operation ${op.op} references unknown component ID: ${op.id}. Ignoring operation.`)
         continue // Skip this operation
       }
     }

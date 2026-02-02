@@ -81,8 +81,6 @@ export function ImageComponent({ component }: ImageComponentProps) {
         setLoading((currentLoading) => {
           if (currentLoading) {
             setError('Image failed to load within 30 seconds. The image may be slow to load or the server may be unavailable.')
-            // Log full URL to console for debugging
-            console.error('Image timeout - Full URL:', src)
             return false
           }
           return currentLoading
@@ -152,20 +150,14 @@ export function ImageComponent({ component }: ImageComponentProps) {
     setError(null)
   }
 
-  const handleError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+  const handleError = () => {
     // Clear timeout if image errors
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
     setLoading(false)
-    const target = e.target as HTMLImageElement
-    const failedUrl = target.src || src || 'unknown'
-    const errorMsg = `Failed to load image`
-    setError(errorMsg)
-    // Log full URL to console for debugging
-    console.error('Image load error - Full URL:', failedUrl)
-    console.error('Image load error - Component src prop:', src)
+    setError('Failed to load image')
   }
 
   if (!src) {
