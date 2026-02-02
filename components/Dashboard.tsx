@@ -156,7 +156,7 @@ export function Dashboard() {
       })
 
       if (res.ok) {
-        const { schema: updatedSchema } = await res.json()
+        const { schema: updatedSchema, warnings } = await res.json()
         // #region agent log
         agentLog({location:'Dashboard.tsx:142',message:'API response received',data:{componentCount:updatedSchema.components?.length,componentIds:updatedSchema.components?.map((c:any)=>c.id),componentTypes:updatedSchema.components?.map((c:any)=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
         // #endregion
@@ -167,6 +167,12 @@ export function Dashboard() {
         // #endregion
         // Note: previousSchema will be updated only after successful render
         // If runtime error occurs, ErrorBoundary will roll back to previousSchema
+        
+        // Display warnings to user if any (per design spec: show messages for ignored operations)
+        if (warnings && warnings.length > 0) {
+          // Set error state to show warnings (we'll style it as a warning, not an error)
+          setError(warnings.join(' '))
+        }
       } else {
         const errorData = await res.json()
         setError(errorData.error || 'Failed to process AI prompt')
@@ -356,28 +362,46 @@ export function Dashboard() {
               <div 
                 className="mb-3 p-3 rounded-lg border-2"
                 style={{
-                  backgroundColor: schema.theme.backgroundColor 
-                    ? (getTextColor() === '#ffffff' ? '#7f1d1d' : '#fee2e2')
-                    : (schema.theme.mode === 'dark' ? '#7f1d1d' : '#fee2e2'),
-                  borderColor: schema.theme.backgroundColor
-                    ? (getTextColor() === '#ffffff' ? '#991b1b' : '#fecaca')
-                    : (schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca'),
-                  color: schema.theme.backgroundColor
-                    ? (getTextColor() === '#ffffff' ? '#fecaca' : '#991b1b')
-                    : (schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b'),
+                  backgroundColor: (error.includes('ignored') || error.includes('not added') || error.includes('Maximum'))
+                    ? (schema.theme.backgroundColor 
+                        ? (getTextColor() === '#ffffff' ? '#78350f' : '#fef3c7')
+                        : (schema.theme.mode === 'dark' ? '#78350f' : '#fef3c7'))
+                    : (schema.theme.backgroundColor 
+                        ? (getTextColor() === '#ffffff' ? '#7f1d1d' : '#fee2e2')
+                        : (schema.theme.mode === 'dark' ? '#7f1d1d' : '#fee2e2')),
+                  borderColor: (error.includes('ignored') || error.includes('not added') || error.includes('Maximum'))
+                    ? (schema.theme.backgroundColor
+                        ? (getTextColor() === '#ffffff' ? '#92400e' : '#fde68a')
+                        : (schema.theme.mode === 'dark' ? '#92400e' : '#fde68a'))
+                    : (schema.theme.backgroundColor
+                        ? (getTextColor() === '#ffffff' ? '#991b1b' : '#fecaca')
+                        : (schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca')),
+                  color: (error.includes('ignored') || error.includes('not added') || error.includes('Maximum'))
+                    ? (schema.theme.backgroundColor
+                        ? (getTextColor() === '#ffffff' ? '#fde68a' : '#92400e')
+                        : (schema.theme.mode === 'dark' ? '#fde68a' : '#92400e'))
+                    : (schema.theme.backgroundColor
+                        ? (getTextColor() === '#ffffff' ? '#fecaca' : '#991b1b')
+                        : (schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b')),
                 }}
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <strong>Error:</strong> {error}
-                    <p className="text-sm mt-1">The previous design has been restored.</p>
+                    <strong>{(error.includes('ignored') || error.includes('not added') || error.includes('Maximum')) ? '⚠️ Warning:' : 'Error:'}</strong> {error}
+                    {!(error.includes('ignored') || error.includes('not added') || error.includes('Maximum')) && (
+                      <p className="text-sm mt-1">The previous design has been restored.</p>
+                    )}
                   </div>
                   <button
                     onClick={() => setError(null)}
                     className="ml-4 px-3 py-1 rounded"
                     style={{
-                      backgroundColor: schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca',
-                      color: schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b',
+                      backgroundColor: (error.includes('ignored') || error.includes('not added') || error.includes('Maximum'))
+                        ? (schema.theme.mode === 'dark' ? '#92400e' : '#fde68a')
+                        : (schema.theme.mode === 'dark' ? '#991b1b' : '#fecaca'),
+                      color: (error.includes('ignored') || error.includes('not added') || error.includes('Maximum'))
+                        ? (schema.theme.mode === 'dark' ? '#fde68a' : '#92400e')
+                        : (schema.theme.mode === 'dark' ? '#fecaca' : '#991b1b'),
                     }}
                   >
                     ×

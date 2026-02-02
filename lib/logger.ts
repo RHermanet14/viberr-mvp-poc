@@ -7,11 +7,13 @@ interface LogEntry {
   operation: 'ai_request' | 'schema_update' | 'error'
   prompt?: string
   operationsCount?: number
+  validOperationsCount?: number
   operations?: any[]
   componentCountBefore?: number
   componentCountAfter?: number
   error?: string
   durationMs?: number
+  warnings?: string[]
 }
 
 /**
@@ -52,8 +54,11 @@ export function logAIRequest(entry: Omit<LogEntry, 'timestamp' | 'endpoint' | 'o
   }
   
   // In production, send to logging service (e.g., Winston, Pino, CloudWatch)
-  // For MVP, use structured console.log
-  console.log('[AI_REQUEST]', JSON.stringify(logEntry, null, 2))
+  // For development, use structured console.log
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[AI_REQUEST]', JSON.stringify(logEntry, null, 2))
+  }
+  // In production, you would send to your logging service here
 }
 
 export function logSchemaUpdate(entry: Omit<LogEntry, 'timestamp' | 'endpoint' | 'operation'>) {
@@ -64,7 +69,11 @@ export function logSchemaUpdate(entry: Omit<LogEntry, 'timestamp' | 'endpoint' |
     ...entry,
   }
   
-  console.log('[SCHEMA_UPDATE]', JSON.stringify(logEntry, null, 2))
+  // In development, use structured console.log
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[SCHEMA_UPDATE]', JSON.stringify(logEntry, null, 2))
+  }
+  // In production, you would send to your logging service here
 }
 
 export function logError(entry: Omit<LogEntry, 'timestamp' | 'operation'> & { endpoint?: string }) {
@@ -78,5 +87,7 @@ export function logError(entry: Omit<LogEntry, 'timestamp' | 'operation'> & { en
     ...(rest.prompt ? { prompt: sanitizePrompt(rest.prompt) } : {}),
   }
   
+  // Always log errors (both development and production)
+  // In production, you would also send to error tracking service (e.g., Sentry)
   console.error('[ERROR]', JSON.stringify(logEntry, null, 2))
 }

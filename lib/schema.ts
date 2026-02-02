@@ -82,7 +82,7 @@ export interface Component {
     // Additional
     cursor?: string
     pointerEvents?: 'auto' | 'none' | 'visiblePainted' | 'visibleFill' | 'visibleStroke' | 'visible' | 'painted' | 'fill' | 'stroke' | 'all' | 'inherit'
-    userSelect?: 'none' | 'auto' | 'text' | 'contain' | 'all'
+    userSelect?: 'none' | 'auto' | 'text' | 'all'
     outline?: string
     outlineOffset?: string | number
   }
@@ -204,8 +204,12 @@ export type Operation =
   | { op: 'replace_component'; id: string; component: Component }
   | { op: 'reorder_component'; id: string; newIndex: number }
 
-export function applyOperations(schema: DesignSchema, operations: Operation[]): DesignSchema {
+export function applyOperations(schema: DesignSchema, operations: Operation[]): { 
+  schema: DesignSchema
+  warnings: string[]
+} {
   let result = JSON.parse(JSON.stringify(schema)) as DesignSchema
+  const warnings: string[] = []
 
   for (const operation of operations) {
     try {
@@ -234,7 +238,18 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
           break
         case 'add_component':
           if (result.components.length >= 30) {
+            // Per design spec: "Excessive components → capped with message"
+            const warning = 'Maximum 30 components allowed. This component was not added.'
+            warnings.push(warning)
             console.warn('Maximum 30 components allowed')
+            continue
+          }
+          // Check for duplicate component ID
+          const existingComponent = result.components.find(c => c.id === operation.component.id)
+          if (existingComponent) {
+            const warning = `Component with ID "${operation.component.id}" already exists. Skipping duplicate.`
+            warnings.push(warning)
+            console.warn(`Duplicate component ID detected: ${operation.component.id}`)
             continue
           }
           result.components.push(operation.component)
@@ -269,10 +284,11 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
       }
     } catch (error) {
       console.warn(`Failed to apply operation ${operation.op}:`, error)
+      warnings.push(`Failed to apply operation ${operation.op}: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
-  return result
+  return { schema: result, warnings }
 }
 
 function setNestedValue(obj: any, path: string, value: any) {

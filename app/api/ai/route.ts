@@ -84,22 +84,28 @@ export async function POST(request: Request) {
     }
 
     // Validate component IDs referenced in operations exist
+    // Per design spec: "Unknown component id → ignored with warning"
+    // This filters out invalid operations instead of rejecting the entire request
     const componentIdValidation = validateComponentIds(operations, typedSchema)
-    if (!componentIdValidation.valid) {
+    const validOperations = componentIdValidation.filteredOperations
+    const warnings: string[] = [...componentIdValidation.warnings]
+    
+    // Log warnings if any operations were filtered out
+    if (componentIdValidation.warnings.length > 0) {
       logError({
         endpoint: '/api/ai',
         prompt,
         operationsCount: operations.length,
-        error: componentIdValidation.error || 'Component ID validation failed',
+        validOperationsCount: validOperations.length,
+        warnings: componentIdValidation.warnings,
+        error: `${componentIdValidation.warnings.length} operation(s) referenced unknown component IDs and were ignored`,
       })
-      return NextResponse.json(
-        { error: componentIdValidation.error || 'Operation references unknown component' },
-        { status: 400 }
-      )
     }
 
     // Apply operations
-    const updatedSchema = applyOperations(typedSchema, operations)
+    const applyResult = applyOperations(typedSchema, validOperations)
+    const updatedSchema = applyResult.schema
+    warnings.push(...applyResult.warnings)
     
     // Validate resulting schema
     const resultValidation = validateSchema(updatedSchema)
@@ -145,8 +151,9 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({
-      operations,
+      operations: validOperations, // Return only valid operations that were applied
       schema: updatedSchema,
+      warnings: warnings.length > 0 ? warnings : undefined, // Include warnings if any
     }, {
       headers: {
         'X-RateLimit-Limit': '10',

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { logError } from '@/lib/logger'
 
 // Mock summary data - aggregated by month
 const mockSummary = [
@@ -8,5 +9,18 @@ const mockSummary = [
 ]
 
 export async function GET() {
-  return NextResponse.json(mockSummary)
+  try {
+    // In production, this would aggregate from an external API or database
+    // For now, return mock data
+    return NextResponse.json(mockSummary)
+  } catch (error: any) {
+    logError({
+      endpoint: '/api/data/summary',
+      error: error.message || 'Failed to fetch summary data',
+    })
+    return NextResponse.json(
+      { error: 'Failed to fetch summary data' },
+      { status: 500 }
+    )
+  }
 }

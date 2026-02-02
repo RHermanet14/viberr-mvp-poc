@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { logError } from '@/lib/logger'
 
 // Mock data - in production this would come from an external API
 const mockProducts = [
@@ -17,5 +18,18 @@ const mockProducts = [
 ]
 
 export async function GET() {
-  return NextResponse.json(mockProducts)
+  try {
+    // In production, this would fetch from an external API
+    // For now, return mock data
+    return NextResponse.json(mockProducts)
+  } catch (error: any) {
+    logError({
+      endpoint: '/api/data',
+      error: error.message || 'Failed to fetch data',
+    })
+    return NextResponse.json(
+      { error: 'Failed to fetch data' },
+      { status: 500 }
+    )
+  }
 }

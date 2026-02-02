@@ -203,7 +203,13 @@ export function validateOperations(operations: unknown[]): { valid: boolean; err
 
 // Validate that component IDs referenced in operations exist in the schema
 // Note: Components added via add_component in the same batch are considered valid for subsequent operations
-export function validateComponentIds(operations: Operation[], schema: DesignSchema): { valid: boolean; error?: string } {
+// Per design spec: "Unknown component id → ignored with warning"
+// Returns filtered operations (invalid ones removed) and warnings
+export function validateComponentIds(operations: Operation[], schema: DesignSchema): { 
+  valid: boolean
+  filteredOperations: Operation[]
+  warnings: string[]
+} {
   const componentIds = new Set(schema.components.map(c => c.id))
   
   // First pass: collect all component IDs that will be added in this batch
@@ -220,14 +226,17 @@ export function validateComponentIds(operations: Operation[], schema: DesignSche
   Array.from(componentIds).forEach(id => allValidComponentIds.add(id))
   Array.from(addedComponentIds).forEach(id => allValidComponentIds.add(id))
   
+  const filteredOperations: Operation[] = []
+  const warnings: string[] = []
+  
   for (const op of operations) {
     // Check remove_component, move_component, replace_component, reorder_component
     if (op.op === 'remove_component' || op.op === 'move_component' || op.op === 'replace_component' || op.op === 'reorder_component') {
       if (!allValidComponentIds.has(op.id)) {
-        return {
-          valid: false,
-          error: `Operation references unknown component ID: ${op.id}`,
-        }
+        // Per design spec: ignore with warning instead of rejecting
+        warnings.push(`Operation ${op.op} references unknown component ID: ${op.id}. This operation was ignored.`)
+        console.warn(`Operation ${op.op} references unknown component ID: ${op.id}. Ignoring operation.`)
+        continue // Skip this operation
       }
     }
     
@@ -242,7 +251,14 @@ export function validateComponentIds(operations: Operation[], schema: DesignSche
         // (Currently all set_style/update operations are allowed to reference non-existent components)
       }
     }
+    
+    // Operation is valid, include it
+    filteredOperations.push(op)
   }
   
-  return { valid: true }
+  return { 
+    valid: true, // Always valid - we just filter out invalid operations
+    filteredOperations,
+    warnings
+  }
 }

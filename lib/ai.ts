@@ -2,6 +2,78 @@ import Groq from 'groq-sdk'
 import { DesignSchema, Operation, Component } from './schema'
 import { getOptimizedSchema, isVagueRequest } from './schemaOptimizer'
 
+// Analyze prompt to determine which guidance blocks are needed
+function analyzePromptIntent(prompt: string): {
+  isReorder: boolean
+  isAddKpi: boolean
+  isAddChart: boolean
+  isAddImage: boolean
+  isAddTable: boolean
+  isAddText: boolean
+  isRemove: boolean
+  isFontStyle: boolean
+  isColorStyle: boolean
+  isFilterSort: boolean
+  isTheme: boolean
+  isLayout: boolean
+  needsReorderGuidance: boolean
+  needsKpiGuidance: boolean
+  needsChartGuidance: boolean
+  needsImageGuidance: boolean
+  needsTopNGuidance: boolean
+  needsFontGuidance: boolean
+  needsPieChartGuidance: boolean
+} {
+  const lower = prompt.toLowerCase()
+  
+  // Detect operation types
+  const isReorder = /\b(move|reorder|to top|to the top|to front|to the front|at top|at the top|to beginning|to the beginning)\b/i.test(prompt)
+  const isAddKpi = /\b(add|create|insert|show|display).*(kpi|total items|avg price|average price|count|sum)\b/i.test(prompt) || 
+                   (/\b(kpi|total items|avg price|average price|count|sum)\b/i.test(prompt) && /\b(add|create|insert|show|display)\b/i.test(prompt))
+  const isAddChart = /\b(add|create|insert|show|display).*(chart|pie chart|bar chart|line chart|area chart)\b/i.test(prompt) ||
+                     (/\b(chart|pie chart|bar chart|line chart|area chart)\b/i.test(prompt) && /\b(add|create|insert|show|display)\b/i.test(prompt))
+  const isAddImage = /\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(prompt)
+  const isAddTable = /\b(add|create|insert|show|display).*(table)\b/i.test(prompt)
+  const isAddText = /\b(add|create|insert|show|display).*(text|heading|title)\b/i.test(prompt)
+  const isRemove = /\b(remove|delete|hide|get rid of)\b/i.test(prompt)
+  const isFontStyle = /\b(font|typeface|typography|text style|gothic|elegant|modern|bold|classic|futuristic|handwritten|serif|sans-serif|monospace|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|artistic|minimalist)\b/i.test(prompt)
+  const isColorStyle = /\b(color|background|border|shadow|padding|margin|size|bigger|smaller)\b/i.test(prompt) && !isFontStyle
+  const isFilterSort = /\b(sort|filter|top \d+|show only top|by price|by date|ascending|descending)\b/i.test(prompt)
+  const isTheme = /\b(dark mode|light mode|theme|background color|primary color)\b/i.test(prompt) && !isVagueRequest(prompt)
+  const isLayout = /\b(columns|layout|two column|three column|grid)\b/i.test(prompt)
+  
+  // Determine which guidance blocks are needed
+  const needsReorderGuidance = isReorder || (/\b(at top|at the top|on top|to top|to the top|to front|to the front)\b/i.test(prompt) && (isAddKpi || isAddChart || isAddImage || isAddTable || isAddText))
+  const needsKpiGuidance = isAddKpi
+  const needsChartGuidance = isAddChart
+  const needsImageGuidance = isAddImage
+  const needsTopNGuidance = isFilterSort || /\b(top \d+|show only top \d+|only top \d+)\b/i.test(prompt)
+  const needsFontGuidance = isFontStyle || (isVagueRequest(prompt) && /\b(font|typeface|typography)\b/i.test(prompt))
+  const needsPieChartGuidance = isAddChart && /\b(pie chart|chart).*by category|by category.*(pie|chart)\b/i.test(prompt)
+  
+  return {
+    isReorder,
+    isAddKpi,
+    isAddChart,
+    isAddImage,
+    isAddTable,
+    isAddText,
+    isRemove,
+    isFontStyle,
+    isColorStyle,
+    isFilterSort,
+    isTheme,
+    isLayout,
+    needsReorderGuidance,
+    needsKpiGuidance,
+    needsChartGuidance,
+    needsImageGuidance,
+    needsTopNGuidance,
+    needsFontGuidance,
+    needsPieChartGuidance,
+  }
+}
+
 const groq = process.env.GROQ_API_KEY ? new Groq({
   apiKey: process.env.GROQ_API_KEY,
 }) : null
@@ -151,6 +223,9 @@ export async function generateDesignOperations(
       })
     }
     
+    // Analyze prompt intent to determine which guidance blocks are needed
+    const intent = analyzePromptIntent(processedPrompt)
+    
     // Build user prompt - URLs are now placeholders
     let userPrompt = `Current schema: ${finalSchemaJson}
 
@@ -166,7 +241,7 @@ User request: ${processedPrompt}`
       userPrompt += `\n\nNOTE: This request contains ${intents.length} operations. Process ALL of them:\n${intents.map((intent, i) => `${i+1}. ${intent}`).join('\n')}`
     }
 
-    // Add chain-of-thought for vague requests
+    // Add chain-of-thought for vague requests (only if vague)
     if (vague) {
       userPrompt += `\n\nTHINK STEP (internal, don't output in response):
 1. What brand/service is mentioned? Identify it.
@@ -182,26 +257,41 @@ CRITICAL: After setting theme colors, you MUST apply them to ALL existing compon
 Now generate operations based on this analysis. Limit to 15 operations maximum. Focus on key style elements.`
     }
     
-    // Add specific guidance for common patterns
-    if (/\b(pie chart|chart).*by category|by category.*(pie|chart)\b/i.test(prompt)) {
-      userPrompt += `\n\nNOTE: "pie chart by category" means ADD a new pie chart component. Do not reference existing pie chart components.`
+    // Add guidance ONLY for operations that are actually needed (based on intent analysis)
+    
+    // Reorder guidance - needed for reorder operations or when "at top" is mentioned with add operations
+    if (intent.needsReorderGuidance) {
+      if (intent.isAddKpi && /\b(kpi|kpis).*(at top|at the top|on top)\b/i.test(processedPrompt)) {
+        userPrompt += `\n\nNOTE: "KPIs at top" means after adding KPIs, use reorder_component operations to move them to the beginning (newIndex: 0, 1, etc.).`
+      } else if (intent.isReorder) {
+        userPrompt += `\n\nNOTE: To move a component to the top/front, use reorder_component with newIndex: 0. To move to a specific position, use the appropriate newIndex.`
+      } else if (/\b(at top|at the top|on top|to top|to the top|to front|to the front)\b/i.test(processedPrompt)) {
+        userPrompt += `\n\nNOTE: After adding the component, use reorder_component to move it to the beginning (newIndex: 0).`
+      }
     }
     
-    if (/\b(kpi|kpis).*(at top|at the top|on top)\b/i.test(prompt)) {
-      userPrompt += `\n\nNOTE: "KPIs at top" means after adding KPIs, use reorder_component operations to move them to the beginning (newIndex: 0, 1, etc.).`
+    // KPI guidance - only needed when adding KPIs
+    if (intent.needsKpiGuidance) {
+      userPrompt += `\n\nNOTE: When adding KPIs, ALWAYS include dataSource="/api/data". Without dataSource, KPIs will be empty. Include calculation ("count"/"avg"/"sum"), field ("price" if avg/sum), and label.`
     }
     
-    if (/\b(total items|avg price|average price|count|sum)\b/i.test(prompt) && /\bkpi/i.test(prompt)) {
-      userPrompt += `\n\nNOTE: When adding KPIs, ALWAYS include dataSource="/api/data". Without dataSource, KPIs will be empty.`
+    // Chart guidance - only needed when adding charts
+    if (intent.needsChartGuidance) {
+      userPrompt += `\n\nNOTE: Charts default to dataSource="/api/data/summary", xField="month", yField="total". For charts by category/field, use dataSource="/api/data" with xField="category" and aggregateFunction="count".`
     }
     
-    if (/\b(top \d+|show only top \d+|only top \d+)\b/i.test(prompt)) {
+    // Pie chart by category guidance - only needed when adding pie charts by category
+    if (intent.needsPieChartGuidance) {
+      userPrompt += `\n\nNOTE: "pie chart by category" means ADD a new pie chart component. Do not reference existing pie chart components. Use dataSource="/api/data", xField="category", aggregateFunction="count".`
+    }
+    
+    // Top N table filtering guidance - only needed when filtering/sorting tables
+    if (intent.needsTopNGuidance) {
       userPrompt += `\n\nNOTE: "top N" means filter the table to show only N rows. Set filters/limit to N, filters/sortBy to "price", and filters/sortOrder to "desc" (highest price first). Do NOT add horizontal scrolling or change table layout.`
     }
     
-    // Add guidance for font style requests
-    if (/\b(font|typeface|typography|text style).*(gothic|elegant|modern|bold|classic|futuristic|handwritten|serif|sans-serif|monospace|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|artistic|minimalist)\b/i.test(prompt) || 
-        /\b(gothic|elegant|modern|bold|classic|futuristic|handwritten|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|artistic|minimalist)\s+(font|typeface|text|typography)\b/i.test(prompt)) {
+    // Font guidance - only needed when changing fonts or in vague requests that might need fonts
+    if (intent.needsFontGuidance) {
       userPrompt += `\n\nNOTE: Font style interpretation:
 - "gothic" or "bold decorative" → Use "Oswald" or "Bebas Neue" (bold, impactful)
 - "elegant" or "classic" → Use "Playfair Display" or "Merriweather" (serif, elegant)
@@ -214,9 +304,11 @@ Now generate operations based on this analysis. Limit to 15 operations maximum. 
 Always use actual Google Font names, not style descriptions.`
     }
     
-    // Add guidance for image requests without URLs
-    if (/\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(processedPrompt) && extractedUrls.length === 0) {
-      userPrompt += `\n\nCRITICAL: User requested an image but provided no URL. DO NOT create an image component.`
+    // Image guidance - only needed when adding images
+    if (intent.needsImageGuidance) {
+      if (extractedUrls.length === 0) {
+        userPrompt += `\n\nCRITICAL: User requested an image but provided no URL. DO NOT create an image component.`
+      }
     }
 
     userPrompt += `\n\nCRITICAL: Return ONLY valid JSON. Start with { and end with }. No markdown, no code blocks, no explanations.
