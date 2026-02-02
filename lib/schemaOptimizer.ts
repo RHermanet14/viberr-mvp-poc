@@ -1,13 +1,18 @@
 import { DesignSchema, Component } from './schema'
 
-// Remove null/undefined values from schema
+// Remove null/undefined values from schema AND strip large data URLs
 function cleanSchema(schema: any): any {
-  return JSON.parse(JSON.stringify(schema, (key, value) => 
-    value === null || value === undefined ? undefined : value
-  ))
+  return JSON.parse(JSON.stringify(schema, (key, value) => {
+    if (value === null || value === undefined) return undefined
+    // Strip large data URLs from image src (they can be 1MB+)
+    if (key === 'src' && typeof value === 'string' && value.startsWith('data:')) {
+      return '[IMAGE_DATA]' // Placeholder so AI knows there's an image
+    }
+    return value
+  }))
 }
 
-// Create minimal component representation (only ID and type)
+// Create minimal component representation (ID and type only)
 function getMinimalComponent(component: Component): { id: string; type: string } {
   return {
     id: component.id,
@@ -15,137 +20,79 @@ function getMinimalComponent(component: Component): { id: string; type: string }
   }
 }
 
-// Context-aware schema reduction based on prompt type
+// Optimize schema to reduce tokens while keeping essential info for AI
 export function getOptimizedSchema(schema: DesignSchema, prompt: string): any {
   const lower = prompt.toLowerCase()
   const cleaned = cleanSchema(schema)
   
-  // Detect vague style requests (broader than brand names; used for schema minimization too)
-  // NOTE: We reuse exported isVagueRequest() so behavior stays consistent across the app.
-  const isVague = isVagueRequest(prompt)
+  // Always include component IDs and types - this is critical for the AI
+  // to know what components exist for reorder/remove/style operations
   
-  // More aggressive optimization: if schema has many components, always minimize
-  const hasManyComponents = cleaned.components && cleaned.components.length > 10
-  
-  // Theme operations - only need theme and layout
-  if (lower.match(/\b(dark|light|theme|color|background|mode)\b/) && 
-      !lower.match(/\b(add|remove|delete|create|show|hide|column|chart|kpi|table|text)\b/)) {
+  // Theme-only operations
+  if (lower.match(/\b(dark|light|theme|mode)\b/) && 
+      !lower.match(/\b(add|remove|delete|create|chart|kpi|table|text|image|reorder|move)\b/)) {
     return {
       theme: cleaned.theme,
       layout: cleaned.layout,
-      components: cleaned.components.map(getMinimalComponent), // Just IDs/types for reference
+      components: cleaned.components.map(getMinimalComponent),
       filters: cleaned.filters,
     }
   }
   
-  // Component operations (add/remove/reorder) - need ONLY component IDs/types for reference
-  // This dramatically reduces token count for simple add/remove operations
-  if (lower.match(/\b(add|remove|delete|reorder|move|replace)\b/)) {
-    // For empty dashboard, very simple operations, OR many components, send absolute minimum
-    if (cleaned.components.length === 0 || hasManyComponents || lower.match(/\b(add|remove)\s+(a|an|the)?\s*(chart|kpi|table|text|pie|bar|line|image)\b/)) {
-      return {
-        theme: cleaned.theme,
-        layout: cleaned.layout,
-        components: cleaned.components.map(getMinimalComponent), // Just IDs/types
-        filters: cleaned.filters,
-      }
-    }
-    // For more complex operations, include minimal props
+  // Component operations (add/remove/reorder/replace) - minimal schema
+  if (lower.match(/\b(add|remove|delete|reorder|move|replace|between|top|bottom)\b/)) {
     return {
-      ...cleaned,
-      components: cleaned.components.map((c: Component) => ({
-        id: c.id,
-        type: c.type,
-        // Only include essential props for component operations
-        props: c.props ? {
-          dataSource: c.props.dataSource,
-          // Include other props only if they exist and are non-empty
-          ...(c.props.columns ? { columns: c.props.columns } : {}),
-          ...(c.props.chartType ? { chartType: c.props.chartType } : {}),
-          ...(c.props.xField ? { xField: c.props.xField } : {}),
-          ...(c.props.yField ? { yField: c.props.yField } : {}),
-          // Include src for image components (required)
-          ...(c.type === 'image' && c.props.src ? { src: c.props.src } : {}),
-        } : undefined,
-        // Don't include style for component operations
-      })),
+      theme: cleaned.theme,
+      layout: cleaned.layout,
+      components: cleaned.components.map(getMinimalComponent),
+      filters: cleaned.filters,
     }
   }
   
-  // Style operations - need component IDs/types + style objects
-  if (lower.match(/\b(style|color|size|font|bigger|smaller|padding|margin|border|shadow)\b/)) {
-    return {
-      ...cleaned,
-      components: cleaned.components.map((c: Component) => ({
-        id: c.id,
-        type: c.type,
-        style: c.style ? Object.keys(c.style).reduce((acc, key) => {
-          const value = c.style![key as keyof typeof c.style]
-          if (value !== undefined && value !== null) {
-            acc[key] = value
-          }
-          return acc
-        }, {} as any) : undefined,
-      })),
-    }
-  }
-  
-  // For vague requests, send minimal schema but keep all component IDs/types
-  if (isVague) {
+  // Style operations - include current styles for context
+  if (lower.match(/\b(style|color|red|blue|green|font|bigger|smaller|padding|margin|border|fullscreen|width|height|size|resize)\b/)) {
     return {
       theme: cleaned.theme,
       layout: cleaned.layout,
       components: cleaned.components.map((c: Component) => ({
         id: c.id,
         type: c.type,
-        // Include minimal style info for vague requests
-        style: c.style ? {
-          backgroundColor: c.style.backgroundColor,
-          backgroundImage: c.style.backgroundImage,
-          color: c.style.color,
-          fontFamily: c.style.fontFamily,
-          cardStyle: c.style.cardStyle,
-        } : undefined,
+        style: c.style || {},
       })),
       filters: cleaned.filters,
     }
   }
   
-  // Default: send cleaned full schema
+  // Vague/brand requests - minimal with component IDs
+  if (isVagueRequest(prompt)) {
+    return {
+      theme: cleaned.theme,
+      layout: cleaned.layout,
+      components: cleaned.components.map(getMinimalComponent),
+      filters: cleaned.filters,
+    }
+  }
+  
+  // Default: cleaned full schema
   return cleaned
 }
 
-// Check if request is vague (needs more processing time)
+// Simple check for vague/brand-style requests
 export function isVagueRequest(prompt: string): boolean {
   const lower = prompt.toLowerCase()
 
-  // Generic resemblance phrases (works for brands and unknown names)
+  // Brand resemblance phrases
   const vaguePhrases = [
-    'make it like',
-    'make it more',
-    'similar to',
-    'style of',
-    'look like',
-    'resemble',
-    'inspired by',
-    'in the style of',
-    'feel like',
-    'vibe of',
+    'make it like', 'similar to', 'style of', 'look like', 
+    'resemble', 'inspired by', 'in the style of', 'vibe of'
   ]
   if (vaguePhrases.some(p => lower.includes(p))) return true
 
-  // Global aesthetic words (broader fallback)
-  // We ONLY treat these as vague when they are not clearly about a specific component or low-level CSS.
-  const hasAestheticWord = /\b(style|aesthetic|vibe|overall look|overall feel|look|feel)\b/.test(lower)
-  const hasComponentWord = /\b(table|chart|graph|kpi|card|button|border|header|footer|row|column|grid)\b/.test(lower)
-  const hasCssWord = /\b(border|padding|margin|font-size|background-color|px|rem|em)\b/.test(lower)
-  if (hasAestheticWord && !hasComponentWord && !hasCssWord) return true
+  // "X mode" pattern (Netflix mode, Spotify mode) but NOT dark/light mode
+  if (/\b\w+\s+mode\b/.test(lower) && !/\b(dark|light)\s+mode\b/.test(lower)) return true
 
-  // "<something> style" fallback (covers unknown brands and adjectives like "anime style")
-  // Exclude common component-specific usages like "table style" / "border style"
-  const isComponentStylePhrase =
-    /\b(table|chart|graph|kpi|card|button|border|header|footer|row|column|grid)\s+style\b/.test(lower)
-  if (!isComponentStylePhrase && /\b\w+\s+style\b/.test(lower)) return true
+  // "X style" pattern but NOT component style
+  if (/\b\w+\s+style\b/.test(lower) && !/\b(table|chart|border|grid)\s+style\b/.test(lower)) return true
 
   return false
 }

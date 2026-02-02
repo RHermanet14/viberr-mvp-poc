@@ -90,6 +90,7 @@ export function DataChart({ component }: DataChartProps) {
           const dataSource = component.props.dataSource || '/api/data/summary'
           const isRawDataSource = dataSource === '/api/data'
           
+          
           const needsAggregation = isRawDataSource && 
             (chartType === 'pie' || chartType === 'bar') && 
             xFieldForAggregation && 
@@ -97,6 +98,7 @@ export function DataChart({ component }: DataChartProps) {
             items.length > 0 && 
             items[0][xFieldForAggregation] !== undefined && 
             !items[0].month
+          
           
           if (needsAggregation && xFieldForAggregation) {
             const aggregateField = yField && items[0][yField] !== undefined ? yField : undefined
@@ -151,6 +153,19 @@ export function DataChart({ component }: DataChartProps) {
     switch (chartType) {
       case 'bar':
       case 'histogram':
+        // Determine the correct value field for bar charts (similar to pie chart logic)
+        let barValueField = yField
+        if (data[0]) {
+          const numericFields = Object.keys(data[0]).filter(key => 
+            key !== xField && typeof data[0][key] === 'number'
+          )
+          if (numericFields.length > 0) {
+            // Prefer 'count' if aggregation was used, then yField, then first numeric
+            barValueField = numericFields.find(f => f === 'count') 
+              || numericFields.find(f => f === yField)
+              || numericFields[0]
+          }
+        }
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart {...commonProps}>
@@ -159,7 +174,7 @@ export function DataChart({ component }: DataChartProps) {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey={yField} fill={chartColor} />
+              <Bar dataKey={barValueField} fill={chartColor} />
             </BarChart>
           </ResponsiveContainer>
         )
