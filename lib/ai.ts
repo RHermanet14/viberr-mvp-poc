@@ -196,45 +196,8 @@ Focus on visual design elements that can be replicated in a dashboard UI. Return
     throw new Error('No AI provider configured. Please set GROQ_API_KEY in your environment variables')
   }
 
-  // Try OpenAI first (more reliable for vision), fallback to Groq if OpenAI not available
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const OpenAI = (await import('openai')).default
-      const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      })
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini', // OpenAI vision model
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: visionPrompt,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64,
-                },
-              },
-            ],
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 300,
-      })
-
-      const styleDescription = completion.choices[0]?.message?.content || ''
-      return styleDescription.trim()
-    } catch {
-      // Fall through to Groq fallback
-    }
-  }
-
-  // Try Groq vision model as fallback
+  // Note: OpenAI support removed - using Groq only
+  // Try Groq vision model
   try {
     // Note: Groq may not support vision in the same format - if this fails, use fallback description
     // For now, we'll use a text-only approach with Groq by describing the image
