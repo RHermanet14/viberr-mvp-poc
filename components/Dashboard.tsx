@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState, Component as ReactComponent, ErrorInfo, ReactNode } from 'react'
-import { useSession } from 'next-auth/react'
-import { DesignSchema, Component as SchemaComponent, getDefaultSchema, getBlankSchema } from '@/lib/schema'
+import { useSession, signOut } from 'next-auth/react'
+import { DesignSchema, Component as SchemaComponent, getDefaultSchema, getBlankSchema, getDarkDefaultSchema, getDarkBlankSchema } from '@/lib/schema'
 import { DataTable } from './DataTable'
 import { DataChart } from './DataChart'
 import { KPI } from './KPI'
@@ -98,6 +98,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showControls, setShowControls] = useState(true)
+  const [showHelp, setShowHelp] = useState(false)
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -138,7 +139,7 @@ export function Dashboard() {
     }
   }
 
-  const handleAIPrompt = async (prompt: string) => {
+  const handleAIPrompt = async (prompt: string, images?: File[]) => {
     if (!schema) return
 
     // Clear any previous errors
@@ -149,10 +150,28 @@ export function Dashboard() {
     setPreviousSchema(currentSchemaBackup)
 
     try {
+      // Convert images to base64 data URLs
+      const imageDataUrls: string[] = []
+      if (images && images.length > 0) {
+        for (const image of images) {
+          const reader = new FileReader()
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(image)
+          })
+          imageDataUrls.push(dataUrl)
+        }
+      }
+
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, schema }),
+        body: JSON.stringify({ 
+          prompt, 
+          schema,
+          images: imageDataUrls.length > 0 ? imageDataUrls : undefined,
+        }),
       })
 
       if (res.ok) {
@@ -261,6 +280,80 @@ export function Dashboard() {
     }
   }
 
+  const handleDarkDefaultPreset = async () => {
+    if (!schema) return
+
+    // Clear any previous errors
+    setError(null)
+    
+    // Store current schema as backup
+    const currentSchemaBackup = JSON.parse(JSON.stringify(schema))
+    setPreviousSchema(currentSchemaBackup)
+
+    try {
+      const darkDefaultSchema = getDarkDefaultSchema()
+      
+      // Save the dark default schema to the server
+      const res = await fetch('/api/schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(darkDefaultSchema),
+      })
+
+      if (res.ok) {
+        // Apply dark default schema
+        setSchema(darkDefaultSchema)
+      } else {
+        const errorData = await res.json()
+        setError(errorData.error || 'Failed to apply dark default preset')
+        // Roll back to backup
+        setSchema(currentSchemaBackup)
+      }
+    } catch (error: any) {
+      console.error('Failed to apply dark default preset:', error)
+      setError(error.message || 'Failed to apply dark default preset')
+      // Roll back to backup
+      setSchema(currentSchemaBackup)
+    }
+  }
+
+  const handleDarkBlankPreset = async () => {
+    if (!schema) return
+
+    // Clear any previous errors
+    setError(null)
+    
+    // Store current schema as backup
+    const currentSchemaBackup = JSON.parse(JSON.stringify(schema))
+    setPreviousSchema(currentSchemaBackup)
+
+    try {
+      const darkBlankSchema = getDarkBlankSchema()
+      
+      // Save the dark blank schema to the server
+      const res = await fetch('/api/schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(darkBlankSchema),
+      })
+
+      if (res.ok) {
+        // Apply dark blank schema
+        setSchema(darkBlankSchema)
+      } else {
+        const errorData = await res.json()
+        setError(errorData.error || 'Failed to apply dark blank preset')
+        // Roll back to backup
+        setSchema(currentSchemaBackup)
+      }
+    } catch (error: any) {
+      console.error('Failed to apply dark blank preset:', error)
+      setError(error.message || 'Failed to apply dark blank preset')
+      // Roll back to backup
+      setSchema(currentSchemaBackup)
+    }
+  }
+
   // #region agent log
   // Log schema changes - MUST be before any conditional returns (Rules of Hooks)
   useEffect(() => {
@@ -330,31 +423,155 @@ export function Dashboard() {
   return (
     <div style={{...themeStyles, overflowX: 'hidden', maxWidth: '100vw'}} className="min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2" style={{overflowX: 'hidden', maxWidth: '100%'}}>
-        <div className="flex items-center justify-between mb-3">
-          <h1 
-            className="text-xl sm:text-2xl font-bold"
-            style={{ color: getTextColor() }}
-          >
-            Personalized Dashboard
-          </h1>
-          <button
-            onClick={() => setShowControls(!showControls)}
-            className="px-2 py-1 rounded text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: schema.theme.primaryColor || '#3b82f6',
-              color: '#ffffff',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.9'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1'
-            }}
-            title={showControls ? 'Hide controls' : 'Show controls'}
-          >
-            {showControls ? '▲' : '▼'}
-          </button>
-        </div>
+        <header 
+          className="flex items-center justify-between py-4 mb-4"
+          style={{
+            borderBottom: `1px solid ${schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            {/* Logo/Icon */}
+            <div 
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{ 
+                backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              }}
+            >
+              <svg 
+                width="24" 
+                height="24" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="#ffffff" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+            </div>
+            <div>
+              <h1 
+                className="text-xl sm:text-2xl font-semibold tracking-tight"
+                style={{ color: getTextColor() }}
+              >
+                Dashboard
+              </h1>
+              {session?.user?.email && (
+                <p 
+                  className="text-xs"
+                  style={{ color: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}
+                >
+                  {session.user.email}
+                </p>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Help Button */}
+            <button
+              onClick={() => setShowHelp(true)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
+              style={{
+                backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                color: getTextColor(),
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+              }}
+              title="Help & Documentation"
+            >
+              <svg 
+                width="18" 
+                height="18" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </button>
+            
+            {/* Toggle Controls Button */}
+            <button
+              onClick={() => setShowControls(!showControls)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
+              style={{
+                backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                color: getTextColor(),
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+              }}
+              title={showControls ? 'Hide editor' : 'Show editor'}
+            >
+              <svg 
+                width="18" 
+                height="18" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+                style={{
+                  transform: showControls ? 'rotate(0deg)' : 'rotate(180deg)',
+                  transition: 'transform 0.2s ease',
+                }}
+              >
+                <polyline points="18 15 12 9 6 15"/>
+              </svg>
+            </button>
+            
+            {/* Logout Button */}
+            <button
+              onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
+              style={{
+                backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                color: getTextColor(),
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+              }}
+              title="Sign out"
+            >
+              <svg 
+                width="18" 
+                height="18" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </button>
+          </div>
+        </header>
         
         {showControls && (
           <>
@@ -416,7 +633,7 @@ export function Dashboard() {
                 <p className="text-xs flex-shrink-0" style={{ color: schema.theme.mode === 'dark' ? '#9ca3af' : '#6b7280' }}>
                   Examples: "Dark mode", "Bigger font", "Two columns", "Add pie chart", "Sort by price"
                 </p>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
                   <button
                     onClick={handleRestoreDefault}
                     className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap"
@@ -431,7 +648,7 @@ export function Dashboard() {
                       e.currentTarget.style.opacity = '1'
                     }}
                   >
-                    Restore Default
+                    Default
                   </button>
                   <button
                     onClick={handleBlankPreset}
@@ -448,6 +665,38 @@ export function Dashboard() {
                     }}
                   >
                     Blank
+                  </button>
+                  <button
+                    onClick={handleDarkDefaultPreset}
+                    className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap"
+                    style={{
+                      backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                      color: '#ffffff',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '0.9'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1'
+                    }}
+                  >
+                    Dark Default
+                  </button>
+                  <button
+                    onClick={handleDarkBlankPreset}
+                    className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap"
+                    style={{
+                      backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                      color: '#ffffff',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '0.9'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '1'
+                    }}
+                  >
+                    Dark Blank
                   </button>
                 </div>
               </div>
@@ -497,6 +746,126 @@ export function Dashboard() {
           </div>
         </ErrorBoundary>
       </div>
+
+      {/* Help Modal */}
+      {showHelp && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowHelp(false)}
+        >
+          <div
+            className="rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            style={{
+              backgroundColor: getBackgroundColor(),
+              color: getTextColor(),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold">Dashboard Help</h2>
+                <button
+                  onClick={() => setShowHelp(false)}
+                  className="text-2xl font-bold px-2 hover:opacity-70"
+                  style={{ color: getTextColor() }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <section>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: schema.theme.primaryColor }}>
+                    Components
+                  </h3>
+                  <ul className="space-y-2 text-sm">
+                    <li><strong>Table:</strong> Display data in rows and columns. Example: "show only title and price"</li>
+                    <li><strong>Chart:</strong> Visualize data with line, bar, pie, area, scatter, radar charts. Example: "add bar chart by month"</li>
+                    <li><strong>KPI:</strong> Show key metrics like totals, averages, counts. Example: "add total items KPI"</li>
+                    <li><strong>Text:</strong> Add headings, titles, or descriptions. Example: "add text saying 'Sales Report'"</li>
+                    <li><strong>Image:</strong> Display images with a URL. Example: "add image with url https://example.com/logo.png"</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: schema.theme.primaryColor }}>
+                    Styling Operations
+                  </h3>
+                  <ul className="space-y-2 text-sm">
+                    <li><strong>Theme:</strong> "dark mode", "light mode", "make it like Netflix/Spotify"</li>
+                    <li><strong>Colors:</strong> "blue background", "red text", "make table text orange"</li>
+                    <li><strong>Typography:</strong> "bigger font", "gothic font", "elegant font"</li>
+                    <li><strong>Layout:</strong> "two columns", "three columns", "bigger gap"</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: schema.theme.primaryColor }}>
+                    Data Operations
+                  </h3>
+                  <ul className="space-y-2 text-sm">
+                    <li><strong>Sorting:</strong> "sort by price", "order by date descending"</li>
+                    <li><strong>Filtering:</strong> "show top 10", "show only 5 items"</li>
+                    <li><strong>Columns:</strong> "table only show title and price"</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: schema.theme.primaryColor }}>
+                    Layout Operations
+                  </h3>
+                  <ul className="space-y-2 text-sm">
+                    <li><strong>Reorder:</strong> "move chart to top", "put KPIs at the beginning"</li>
+                    <li><strong>Remove:</strong> "remove the chart", "delete table"</li>
+                    <li><strong>Add:</strong> "add pie chart by category", "add KPIs at top"</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: schema.theme.primaryColor }}>
+                    Image Upload
+                  </h3>
+                  <p className="text-sm">
+                    Click the "Upload" button or drag & drop an image to replicate its style on your dashboard. 
+                    The AI will analyze colors, typography, and layout from the image and apply them to your dashboard.
+                  </p>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-semibold mb-2" style={{ color: schema.theme.primaryColor }}>
+                    Tips
+                  </h3>
+                  <ul className="space-y-2 text-sm">
+                    <li>• Be specific: "make table text blue" is better than "change colors"</li>
+                    <li>• Combine requests: "dark mode, two columns, add bar chart"</li>
+                    <li>• Use presets to start fresh: Default, Blank, Dark Default, Dark Blank</li>
+                    <li>• Images must include a URL when adding: "add image with url https://..."</li>
+                  </ul>
+                </section>
+              </div>
+
+              <div className="mt-6 text-center">
+                <button
+                  onClick={() => setShowHelp(false)}
+                  className="px-6 py-2 rounded-lg font-medium transition-colors"
+                  style={{
+                    backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                    color: '#ffffff',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = '0.9'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = '1'
+                  }}
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

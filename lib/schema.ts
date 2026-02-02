@@ -195,6 +195,76 @@ export function getBlankSchema(): DesignSchema {
   }
 }
 
+export function getDarkDefaultSchema(): DesignSchema {
+  return {
+    theme: {
+      mode: 'dark',
+      primaryColor: '#3b82f6',
+      fontSize: '16px',
+      fontFamily: 'system-ui, sans-serif',
+      backgroundColor: '#1a1a1a',
+      textColor: '#ffffff',
+    },
+    layout: {
+      columns: 1,
+      gap: 16,
+    },
+    components: [
+      {
+        id: 'table1',
+        type: 'table',
+        props: {
+          dataSource: '/api/data',
+          columns: ['id', 'title', 'category', 'price', 'date'],
+        },
+        style: {
+          width: '100%',
+        },
+      },
+      {
+        id: 'chart1',
+        type: 'chart',
+        props: {
+          chartType: 'line',
+          dataSource: '/api/data/summary',
+          xField: 'month',
+          yField: 'total',
+        },
+        style: {
+          width: '100%',
+          height: '400px',
+        },
+      },
+    ],
+    filters: {
+      sortBy: 'date',
+      sortOrder: 'desc',
+    },
+  }
+}
+
+export function getDarkBlankSchema(): DesignSchema {
+  return {
+    theme: {
+      mode: 'dark',
+      primaryColor: '#3b82f6',
+      fontSize: '16px',
+      fontFamily: 'system-ui, sans-serif',
+      backgroundColor: '#1a1a1a',
+      textColor: '#ffffff',
+    },
+    layout: {
+      columns: 1,
+      gap: 16,
+    },
+    components: [],
+    filters: {
+      sortBy: 'date',
+      sortOrder: 'desc',
+    },
+  }
+}
+
 export type Operation = 
   | { op: 'set_style'; path: string; value: any }
   | { op: 'update'; path: string; value: any }

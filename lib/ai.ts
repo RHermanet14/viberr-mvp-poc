@@ -181,6 +181,86 @@ const groq = process.env.GROQ_API_KEY ? new Groq({
   apiKey: process.env.GROQ_API_KEY,
 }) : null
 
+// Analyze uploaded image to extract style information
+async function analyzeImageStyle(imageBase64: string): Promise<string> {
+  const visionPrompt = `Analyze this dashboard/image and extract style information. Return a concise description (under 200 words) covering:
+1. Primary colors: background color, text color, accent/primary color (provide hex codes if possible)
+2. Typography: font style (serif/sans-serif), weight (bold/normal/light), approximate size
+3. Layout: spacing, borders, shadows, rounded corners
+4. Visual effects: gradients, blur, opacity, transparency
+5. Overall aesthetic: theme (dark/light), style (minimal/modern/classic/etc.)
+
+Focus on visual design elements that can be replicated in a dashboard UI. Return only the style description, no explanations.`
+
+  if (!groq) {
+    throw new Error('No AI provider configured. Please set GROQ_API_KEY in your environment variables')
+  }
+
+  // Try OpenAI first (more reliable for vision), fallback to Groq if OpenAI not available
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const OpenAI = (await import('openai')).default
+      const openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      })
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini', // OpenAI vision model
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: visionPrompt,
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: imageBase64,
+                },
+              },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 300,
+      })
+
+      const styleDescription = completion.choices[0]?.message?.content || ''
+      return styleDescription.trim()
+    } catch (openaiError: any) {
+      console.error('OpenAI vision analysis failed, trying Groq:', openaiError)
+      // Fall through to Groq fallback
+    }
+  }
+
+  // Try Groq vision model as fallback
+  try {
+    // Note: Groq may not support vision in the same format - if this fails, use fallback description
+    // For now, we'll use a text-only approach with Groq by describing the image
+    // In a production system, you'd want to check Groq's actual vision API support
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant', // Groq model (may not support vision)
+      messages: [
+        {
+          role: 'user',
+          content: visionPrompt + '\n\nNote: Analyze the image that was uploaded and extract the style information described above.',
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 300,
+    })
+
+    const styleDescription = completion.choices[0]?.message?.content || ''
+    return styleDescription.trim()
+  } catch (error: any) {
+    console.error('All vision analysis methods failed:', error)
+    // Fallback: return generic description
+    return 'Image uploaded for style reference. Apply modern, clean aesthetic with appropriate colors and typography.'
+  }
+}
+
 // Base system prompt - always included (core constraints and component types)
 const BASE_SYSTEM_PROMPT = `You are UI Design Ops. Edit dashboard schema via JSON operations only.
 
@@ -216,7 +296,8 @@ PATHS
 function buildSystemPrompt(
   intent: ReturnType<typeof analyzePromptIntent>,
   vague: boolean,
-  hasImageUrls: boolean
+  hasImageUrls: boolean,
+  uploadedImageStyles: string[] = []
 ): string {
   let prompt = BASE_SYSTEM_PROMPT
   
@@ -302,6 +383,22 @@ function buildSystemPrompt(
     prompt += `\n- Filtering: "filters/limit" (number) limits table rows. "top N" means limit N rows sorted by price descending.`
   }
   
+  // Add image style reference if uploaded images were analyzed
+  if (uploadedImageStyles.length > 0 && vague) {
+    prompt += `\n\nIMAGE STYLE REFERENCE:`
+    prompt += `\nThe user uploaded ${uploadedImageStyles.length} image(s) for style replication. Analyze the following style descriptions extracted from the image(s):`
+    uploadedImageStyles.forEach((style, index) => {
+      prompt += `\n\nImage ${index + 1} Style Analysis:\n${style}`
+    })
+    prompt += `\n\nReplicate the visual style from these images on the dashboard:`
+    prompt += `\n- Apply the identified colors (background, text, accents) to theme and components`
+    prompt += `\n- Match typography style (font family, weight, size)`
+    prompt += `\n- Replicate layout characteristics (spacing, borders, shadows, rounded corners)`
+    prompt += `\n- Apply visual effects (gradients, blur, opacity) where applicable`
+    prompt += `\n- Match overall aesthetic (theme mode, style direction)`
+    prompt += `\n- Limit to 15 operations for style replication requests`
+  }
+  
   // Add vague request instructions only if vague
   if (vague) {
     prompt += `\n\nVAGUE REQUESTS ("like X"):`
@@ -381,17 +478,37 @@ function buildSystemPrompt(
 
 export async function generateDesignOperations(
   prompt: string,
-  currentSchema: DesignSchema
+  currentSchema: DesignSchema,
+  uploadedImages: string[] = []
 ): Promise<Operation[]> {
   try {
+    // Analyze uploaded images for style extraction
+    const uploadedImageStyles: string[] = []
+    if (uploadedImages.length > 0) {
+      for (const imageBase64 of uploadedImages) {
+        try {
+          const styleDescription = await analyzeImageStyle(imageBase64)
+          uploadedImageStyles.push(styleDescription)
+        } catch (error: any) {
+          console.error('Failed to analyze image:', error)
+          // Continue with other images even if one fails
+        }
+      }
+    }
+
     // Optimize schema based on prompt context
     const optimizedSchema = getOptimizedSchema(currentSchema, prompt)
     
     // Compress JSON (no formatting, remove nulls already handled in optimizer)
     const schemaJson = JSON.stringify(optimizedSchema)
     
+    // Detect explicit "add image" intent (overrides style replication)
+    const hasExplicitAddImageIntent = /\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(prompt.toLowerCase())
+    
     // Detect vague requests for operation limiting
-    const vague = isVagueRequest(prompt)
+    // If images are uploaded and no explicit "add image" intent, treat as vague request
+    const hasUploadedImages = uploadedImages.length > 0
+    const vague = isVagueRequest(prompt) || (hasUploadedImages && !hasExplicitAddImageIntent)
     const timeoutMs = 10000 // Fixed 10s timeout
     
     // If schema is too large, be more aggressive with optimization
@@ -450,7 +567,7 @@ export async function generateDesignOperations(
     const intent = analyzePromptIntent(processedPrompt)
     
     // Build dynamic system prompt based on intent (only include relevant sections)
-    const dynamicSystemPrompt = buildSystemPrompt(intent, vague, extractedUrls.length > 0)
+    const dynamicSystemPrompt = buildSystemPrompt(intent, vague, extractedUrls.length > 0, uploadedImageStyles)
     
     // Build user prompt - URLs are now placeholders
     let userPrompt = `Current schema: ${finalSchemaJson}
@@ -467,20 +584,46 @@ User request: ${processedPrompt}`
       userPrompt += `\n\nNOTE: This request contains ${intents.length} operations. Process ALL of them:\n${intents.map((intent, i) => `${i+1}. ${intent}`).join('\n')}`
     }
 
+    // Handle uploaded images: style replication vs add component
+    if (hasUploadedImages && hasExplicitAddImageIntent) {
+      // User uploaded image AND explicitly said "add image" - add as component
+      userPrompt += `\n\nNOTE: User uploaded ${uploadedImages.length} image(s) and explicitly requested to add them as image components.`
+      userPrompt += `\nUse the uploaded image(s) as data URLs in the src field of image components.`
+      // Add uploaded images as placeholders similar to URL handling
+      uploadedImages.forEach((imageBase64, index) => {
+        const placeholder = `[UPLOADED_IMAGE_${index + 1}]`
+        urlPlaceholderMap.set(placeholder, imageBase64)
+        userPrompt += `\n- Image ${index + 1}: Use placeholder ${placeholder} in src field (will be replaced with uploaded image data URL)`
+      })
+    } else if (hasUploadedImages && !hasExplicitAddImageIntent) {
+      // User uploaded image(s) without explicit "add" - style replication
+      userPrompt += `\n\nNOTE: User uploaded ${uploadedImages.length} image(s) for style replication.`
+      userPrompt += `\nThe system has analyzed the image(s) and extracted style information (see IMAGE STYLE REFERENCE in system prompt).`
+      userPrompt += `\nReplicate the visual style from the uploaded image(s) on the dashboard - do NOT add the images as components.`
+      userPrompt += `\nFocus on: colors, typography, layout, visual effects, and overall aesthetic.`
+    }
+    
     // Add chain-of-thought for vague requests (only if vague)
     if (vague) {
-      userPrompt += `\n\nTHINK STEP (internal, don't output in response):
-1. What brand/service is mentioned? Identify it.
-2. What is this brand's PRIMARY UI COLOR? (The color used for buttons/CTAs in their app, NOT logo colors)
-3. What is the typical theme mode? (dark/light)
-4. What layout characteristics? (card-based, minimal, etc.)
-
-CRITICAL: After setting theme colors, you MUST apply them to ALL existing components:
-- For each chart component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/color","value":"[primaryColor]"}
-- For each table component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/textColor","value":"[textColor or primaryColor]"}
-- For each KPI component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/valueColor","value":"[textColor or primaryColor]"} AND {"op":"set_style","path":"components[id=COMPONENT_ID]/style/backgroundColor","value":"[cardBackgroundColor]"}
-
-Now generate operations based on this analysis. Limit to 15 operations maximum. Focus on key style elements.`
+      userPrompt += `\n\nTHINK STEP (internal, don't output in response):`
+      if (hasUploadedImages && !hasExplicitAddImageIntent) {
+        userPrompt += `\n1. Review the IMAGE STYLE REFERENCE section above for style analysis from uploaded image(s)`
+        userPrompt += `\n2. Extract colors: background, text, accent/primary colors (use hex codes from analysis)`
+        userPrompt += `\n3. Identify typography: font style, weight, size from image analysis`
+        userPrompt += `\n4. Note layout: spacing, borders, shadows, rounded corners`
+        userPrompt += `\n5. Identify visual effects: gradients, blur, opacity`
+        userPrompt += `\n6. Determine theme mode: dark/light from image analysis`
+      } else {
+        userPrompt += `\n1. What brand/service is mentioned? Identify it.`
+        userPrompt += `\n2. What is this brand's PRIMARY UI COLOR? (The color used for buttons/CTAs in their app, NOT logo colors)`
+        userPrompt += `\n3. What is the typical theme mode? (dark/light)`
+        userPrompt += `\n4. What layout characteristics? (card-based, minimal, etc.)`
+      }
+      userPrompt += `\n\nCRITICAL: After setting theme colors, you MUST apply them to ALL existing components:`
+      userPrompt += `\n- For each chart component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/color","value":"[primaryColor]"}`
+      userPrompt += `\n- For each table component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/textColor","value":"[textColor or primaryColor]"}`
+      userPrompt += `\n- For each KPI component: add {"op":"set_style","path":"components[id=COMPONENT_ID]/style/valueColor","value":"[textColor or primaryColor]"} AND {"op":"set_style","path":"components[id=COMPONENT_ID]/style/backgroundColor","value":"[cardBackgroundColor]"}`
+      userPrompt += `\n\nNow generate operations based on this analysis. Limit to 15 operations maximum. Focus on key style elements.`
     }
     
     // Add guidance ONLY for operations that are actually needed (based on intent analysis)

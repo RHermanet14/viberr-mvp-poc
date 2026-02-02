@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { prompt, schema } = await request.json()
+    const { prompt, schema, images } = await request.json()
 
     if (!prompt || !schema) {
       return NextResponse.json(
@@ -49,6 +49,9 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    // images is optional array of base64 data URLs
+    const uploadedImages: string[] = Array.isArray(images) ? images : []
 
     // Validate input schema before processing
     const schemaValidation = validateSchema(schema)
@@ -65,8 +68,8 @@ export async function POST(request: Request) {
 
     const typedSchema = schema as DesignSchema
 
-    // Generate operations from AI
-    const operations = await generateDesignOperations(prompt, typedSchema)
+    // Generate operations from AI (pass uploaded images if any)
+    const operations = await generateDesignOperations(prompt, typedSchema, uploadedImages)
     
     // Validate operations structure
     const operationsValidation = validateOperations(operations)
