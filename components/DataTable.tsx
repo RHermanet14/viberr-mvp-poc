@@ -9,6 +9,23 @@ interface DataTableProps {
   theme?: DesignSchema['theme']
 }
 
+// Helper function to detect if a value is an image URL
+function isImageUrl(value: any): boolean {
+  if (typeof value !== 'string') return false
+  const lower = value.toLowerCase().trim()
+  return (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('data:image/') ||
+    lower.endsWith('.jpg') ||
+    lower.endsWith('.jpeg') ||
+    lower.endsWith('.png') ||
+    lower.endsWith('.gif') ||
+    lower.endsWith('.webp') ||
+    lower.endsWith('.svg')
+  )
+}
+
 export function DataTable({ component, filters, theme }: DataTableProps) {
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,13 +94,32 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
   }
 
   // Apply custom styles from component.style, with fallbacks
+  // Extract border-related properties to avoid mixing shorthand and non-shorthand
+  const {
+    border: styleBorder,
+    borderColor: styleBorderColor,
+    borderWidth: styleBorderWidth,
+    borderStyle: styleBorderStyle,
+    ...otherStyles
+  } = component.style || {}
+  
+  // Build border property: prefer explicit border, otherwise build from parts, otherwise use default
+  const borderValue = styleBorder || 
+    (styleBorderColor || styleBorderWidth || styleBorderStyle
+      ? `${styleBorderWidth || '1px'} ${styleBorderStyle || 'solid'} ${styleBorderColor || theme?.borderColor || '#e5e7eb'}`
+      : `1px solid ${theme?.borderColor || '#e5e7eb'}`)
+  
   const tableStyle = {
-    border: component.style?.border || `1px solid ${theme?.borderColor || '#e5e7eb'}`,
+    border: borderValue,
     borderRadius: component.style?.borderRadius || '0.5rem',
     backgroundColor: component.style?.backgroundColor || theme?.cardBackgroundColor,
+    backgroundImage: component.style?.backgroundImage,
+    backgroundSize: component.style?.backgroundSize || 'cover',
+    backgroundPosition: component.style?.backgroundPosition || 'center',
+    backgroundRepeat: component.style?.backgroundRepeat || 'no-repeat',
     boxShadow: component.style?.boxShadow,
     transition: component.style?.boxShadow ? 'box-shadow 0.3s ease' : undefined,
-    ...component.style,
+    ...otherStyles,
   }
   
   // Theme-aware colors - use component styles first, then theme colors (no mode-based defaults)
@@ -192,19 +228,53 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
                     }
                   }}
                 >
-                  {columns.map((col: string) => (
-                    <td 
-                      key={col} 
-                      className="px-4 py-2"
-                      style={{
-                        ...(textColor && { color: textColor }),
-                        ...(component.style?.fontSize && { fontSize: component.style?.fontSize }),
-                        backgroundColor: 'transparent',
-                      }}
-                    >
-                      {row[col]}
-                    </td>
-                  ))}
+                  {columns.map((col: string) => {
+                    const cellValue = row[col]
+                    const isImage = isImageUrl(cellValue)
+                    
+                    return (
+                      <td 
+                        key={col} 
+                        className="px-4 py-2"
+                        style={{
+                          ...(textColor && !isImage && { color: textColor }),
+                          ...(component.style?.fontSize && !isImage && { fontSize: component.style?.fontSize }),
+                          backgroundColor: 'transparent',
+                          ...(isImage && {
+                            padding: '0.5rem',
+                            textAlign: 'center' as const,
+                          }),
+                        }}
+                      >
+                        {isImage ? (
+                          <img
+                            src={cellValue}
+                            alt={`${col} image`}
+                            style={{
+                              maxWidth: '100px',
+                              maxHeight: '100px',
+                              objectFit: 'contain',
+                              borderRadius: '4px',
+                              display: 'block',
+                              margin: '0 auto',
+                            }}
+                            loading="lazy"
+                            onError={(e) => {
+                              // Fallback to text if image fails to load
+                              const target = e.target as HTMLImageElement
+                              target.style.display = 'none'
+                              const fallback = document.createElement('span')
+                              fallback.textContent = cellValue
+                              fallback.style.color = textColor || 'inherit'
+                              target.parentElement?.appendChild(fallback)
+                            }}
+                          />
+                        ) : (
+                          cellValue
+                        )}
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
             </tbody>

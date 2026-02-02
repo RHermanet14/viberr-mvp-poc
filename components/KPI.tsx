@@ -110,6 +110,10 @@ export function KPI({ component, theme }: KPIProps) {
     borderColor: component.style?.borderColor || theme?.borderColor || defaultBorderColor,
     borderRadius: component.style?.borderRadius || '0.5rem',
     backgroundColor: component.style?.backgroundColor || theme?.cardBackgroundColor || defaultBgColor,
+    backgroundImage: component.style?.backgroundImage,
+    backgroundSize: component.style?.backgroundSize || 'cover',
+    backgroundPosition: component.style?.backgroundPosition || 'center',
+    backgroundRepeat: component.style?.backgroundRepeat || 'no-repeat',
     boxShadow: component.style?.boxShadow,
     transition: component.style?.boxShadow ? 'box-shadow 0.3s ease' : undefined,
     // Prevent text overflow

@@ -1,6 +1,6 @@
 export interface Component {
   id: string
-  type: 'table' | 'chart' | 'kpi' | 'text' | 'pie_chart' | 'bar_chart' | 'line_chart' | 'area_chart' | 'scatter_chart' | 'radar_chart' | 'histogram' | 'composed_chart'
+  type: 'table' | 'chart' | 'kpi' | 'text' | 'image' | 'pie_chart' | 'bar_chart' | 'line_chart' | 'area_chart' | 'scatter_chart' | 'radar_chart' | 'histogram' | 'composed_chart'
   props: Record<string, any>
   style?: {
     // Colors
@@ -20,6 +20,11 @@ export interface Component {
     fontStyle?: 'normal' | 'italic' | 'oblique'
     textAlign?: 'left' | 'center' | 'right' | 'justify'
     textDecoration?: 'none' | 'underline' | 'overline' | 'line-through'
+    letterSpacing?: string | number
+    lineHeight?: string | number
+    wordSpacing?: string | number
+    textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize' | 'full-width'
+    whiteSpace?: 'normal' | 'nowrap' | 'pre' | 'pre-wrap' | 'pre-line' | 'break-spaces'
     // Spacing
     padding?: string | number
     margin?: string | number
@@ -52,6 +57,34 @@ export interface Component {
     transform?: string
     // Z-index
     zIndex?: number
+    // Visual effects
+    backdropFilter?: string
+    filter?: string
+    blur?: string
+    brightness?: string | number
+    contrast?: string | number
+    saturate?: string | number
+    // Background images and gradients
+    backgroundImage?: string
+    backgroundSize?: 'auto' | 'cover' | 'contain' | string
+    backgroundPosition?: string
+    backgroundRepeat?: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' | 'space' | 'round'
+    // Object fit (for images)
+    objectFit?: 'contain' | 'cover' | 'fill' | 'none' | 'scale-down'
+    objectPosition?: string
+    // Advanced layout
+    overflowWrap?: 'normal' | 'break-word' | 'anywhere'
+    wordBreak?: 'normal' | 'break-all' | 'keep-all' | 'break-word'
+    // Transitions
+    transition?: string
+    transitionDuration?: string
+    transitionTimingFunction?: string
+    // Additional
+    cursor?: string
+    pointerEvents?: 'auto' | 'none' | 'visiblePainted' | 'visibleFill' | 'visibleStroke' | 'visible' | 'painted' | 'fill' | 'stroke' | 'all' | 'inherit'
+    userSelect?: 'none' | 'auto' | 'text' | 'contain' | 'all'
+    outline?: string
+    outlineOffset?: string | number
   }
   position?: { x: number; y: number; width: number; height: number }
 }
@@ -178,10 +211,26 @@ export function applyOperations(schema: DesignSchema, operations: Operation[]): 
     try {
       switch (operation.op) {
         case 'set_style':
-          setNestedValue(result, operation.path, operation.value)
-          break
         case 'update':
-          setNestedValue(result, operation.path, operation.value)
+          // Special handling for theme updates to preserve required fields
+          if (operation.path.startsWith('theme/')) {
+            setNestedValue(result, operation.path, operation.value)
+            // Ensure required theme fields are preserved after any theme operation
+            if (!result.theme.fontSize) {
+              result.theme.fontSize = schema.theme.fontSize || '16px'
+            }
+            if (!result.theme.fontFamily) {
+              result.theme.fontFamily = schema.theme.fontFamily || 'system-ui, sans-serif'
+            }
+            if (!result.theme.primaryColor) {
+              result.theme.primaryColor = schema.theme.primaryColor || '#3b82f6'
+            }
+            if (!result.theme.mode) {
+              result.theme.mode = schema.theme.mode || 'light'
+            }
+          } else {
+            setNestedValue(result, operation.path, operation.value)
+          }
           break
         case 'add_component':
           if (result.components.length >= 30) {

@@ -13,6 +13,20 @@ import {
 } from 'recharts'
 import { Component } from '@/lib/schema'
 
+// Helper function for agent logging (development only)
+// Note: CORS errors are expected if the agent logging server isn't running - they're harmless
+const agentLog = (data: any) => {
+  if (process.env.NODE_ENV === 'development') {
+    // Silently attempt to log - failures are expected if server isn't running
+    fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      mode: 'no-cors', // Prevents CORS errors from appearing in console
+    }).catch(() => {}) // Silently ignore all errors
+  }
+}
+
 interface DataChartProps {
   component: Component
 }
@@ -38,9 +52,7 @@ export function DataChart({ component }: DataChartProps) {
 
   // #region agent log
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:35',message:'DataChart component mounted',data:{componentId:component.id,componentType:component.type,props:component.props},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    }
+    agentLog({location:'DataChart.tsx:35',message:'DataChart component mounted',data:{componentId:component.id,componentType:component.type,props:component.props},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
   }, [component.id]);
   // #endregion
 
@@ -91,9 +103,7 @@ export function DataChart({ component }: DataChartProps) {
     const fetchData = async () => {
       try {
         // #region agent log
-        if (process.env.NODE_ENV === 'development') {
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:42',message:'Fetching chart data',data:{componentId:component.id,dataSource:component.props.dataSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        }
+        agentLog({location:'DataChart.tsx:42',message:'Fetching chart data',data:{componentId:component.id,dataSource:component.props.dataSource},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
         // #endregion
         const res = await fetch(component.props.dataSource || '/api/data/summary')
         if (res.ok) {
@@ -139,24 +149,18 @@ export function DataChart({ component }: DataChartProps) {
           }
           
           // #region agent log
-          if (process.env.NODE_ENV === 'development') {
-            fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:46',message:'Chart data fetched successfully',data:{componentId:component.id,dataCount:items.length,aggregated:needsAggregation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-          }
+          agentLog({location:'DataChart.tsx:46',message:'Chart data fetched successfully',data:{componentId:component.id,dataCount:items.length,aggregated:needsAggregation},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
           // #endregion
           setData(items)
         } else {
           // #region agent log
-          if (process.env.NODE_ENV === 'development') {
-            fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:49',message:'Chart data fetch failed',data:{componentId:component.id,status:res.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-          }
+          agentLog({location:'DataChart.tsx:49',message:'Chart data fetch failed',data:{componentId:component.id,status:res.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
           // #endregion
         }
       } catch (error) {
         console.error('Failed to fetch chart data:', error)
         // #region agent log
-        if (process.env.NODE_ENV === 'development') {
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:52',message:'Chart data fetch error',data:{componentId:component.id,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        }
+        agentLog({location:'DataChart.tsx:52',message:'Chart data fetch error',data:{componentId:component.id,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
         // #endregion
       } finally {
         setLoading(false)
@@ -186,31 +190,29 @@ export function DataChart({ component }: DataChartProps) {
   
   // #region agent log
   useEffect(() => {
-    if (!loading && process.env.NODE_ENV === 'development') {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:90',message:'Chart height computed',data:{componentId:component.id,chartHeight,styleHeight:component.style?.height,propsHeight:component.props.height},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    if (!loading) {
+      agentLog({location:'DataChart.tsx:90',message:'Chart height computed',data:{componentId:component.id,chartHeight,styleHeight:component.style?.height,propsHeight:component.props.height},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
     }
   }, [component.id, chartHeight, loading]);
   // #endregion
   
   useEffect(() => {
-    if (!loading && process.env.NODE_ENV === 'development') {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:82',message:'DataChart rendering chart',data:{componentId:component.id,chartType,dataCount:data.length,xField,yField},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    if (!loading) {
+      agentLog({location:'DataChart.tsx:82',message:'DataChart rendering chart',data:{componentId:component.id,chartType,dataCount:data.length,xField,yField},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
     }
   }, [component.id, chartType, data.length, loading, xField, yField]);
   
   // Log JSX return - MUST be before conditional return
   useEffect(() => {
-    if (!loading && process.env.NODE_ENV === 'development') {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:95',message:'DataChart returning JSX',data:{componentId:component.id,chartType},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    if (!loading) {
+      agentLog({location:'DataChart.tsx:95',message:'DataChart returning JSX',data:{componentId:component.id,chartType},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
     }
   }, [component.id, chartType, loading]);
   // #endregion
 
   if (loading) {
     // #region agent log
-    if (process.env.NODE_ENV === 'development') {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:88',message:'DataChart showing loading state',data:{componentId:component.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    }
+    agentLog({location:'DataChart.tsx:88',message:'DataChart showing loading state',data:{componentId:component.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})
     // #endregion
     return <div className="p-4">Loading chart...</div>
   }

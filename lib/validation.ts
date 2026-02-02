@@ -1,10 +1,11 @@
 import { z } from 'zod'
 import { DesignSchema, Operation, Component } from './schema'
+import { isValidFontName } from './fonts'
 
 // JSON Schema validation using Zod
 const ComponentSchema = z.object({
   id: z.string(),
-  type: z.enum(['table', 'chart', 'kpi', 'text', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart']),
+  type: z.enum(['table', 'chart', 'kpi', 'text', 'image', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart']),
   props: z.record(z.any()).optional().default({}),
   style: z.record(z.any()).optional(),
   position: z.object({
@@ -13,6 +14,15 @@ const ComponentSchema = z.object({
     width: z.number().optional(),
     height: z.number().optional(),
   }).optional(),
+}).refine((data) => {
+  // Validate image components require src prop
+  if (data.type === 'image') {
+    return data.props && typeof data.props.src === 'string' && data.props.src.length > 0
+  }
+  return true
+}, {
+  message: 'Image components must have a src prop',
+  path: ['props', 'src'],
 })
 
 const DesignSchemaSchema = z.object({
@@ -97,7 +107,30 @@ const OperationSchema = z.discriminatedUnion('op', [
 
 export function validateSchema(schema: unknown): { valid: boolean; error?: string } {
   try {
-    DesignSchemaSchema.parse(schema)
+    const parsed = DesignSchemaSchema.parse(schema)
+    
+    // Validate font names
+    if (parsed.theme.fontFamily && !isValidFontName(parsed.theme.fontFamily)) {
+      return {
+        valid: false,
+        error: `Invalid font name: ${parsed.theme.fontFamily}`,
+      }
+    }
+    
+    // Validate component font families
+    for (const component of parsed.components) {
+      if (component.style?.fontFamily && typeof component.style.fontFamily === 'string') {
+        // Extract font name (remove quotes, fallbacks)
+        const fontName = component.style.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
+        if (fontName && !isValidFontName(fontName)) {
+          return {
+            valid: false,
+            error: `Invalid font name in component ${component.id}: ${fontName}`,
+          }
+        }
+      }
+    }
+    
     return { valid: true }
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -116,7 +149,42 @@ export function validateSchema(schema: unknown): { valid: boolean; error?: strin
 export function validateOperations(operations: unknown[]): { valid: boolean; error?: string } {
   try {
     for (const op of operations) {
-      OperationSchema.parse(op)
+      const parsed = OperationSchema.parse(op)
+      
+      // Additional validation for add_component operations
+      if (parsed.op === 'add_component') {
+        // Validate image components require src
+        if (parsed.component.type === 'image') {
+          if (!parsed.component.props || !parsed.component.props.src || typeof parsed.component.props.src !== 'string' || parsed.component.props.src.length === 0) {
+            return {
+              valid: false,
+              error: 'Image components must have a src prop with a non-empty string value',
+            }
+          }
+        }
+        
+        // Validate font names in component styles
+        if (parsed.component.style?.fontFamily && typeof parsed.component.style.fontFamily === 'string') {
+          const fontName = parsed.component.style.fontFamily.split(',')[0].trim().replace(/['"]/g, '')
+          if (fontName && !isValidFontName(fontName)) {
+            return {
+              valid: false,
+              error: `Invalid font name in component ${parsed.component.id}: ${fontName}`,
+            }
+          }
+        }
+      }
+      
+      // Validate font names in set_style operations for fontFamily
+      if (parsed.op === 'set_style' && parsed.path.includes('fontFamily') && typeof parsed.value === 'string') {
+        const fontName = parsed.value.split(',')[0].trim().replace(/['"]/g, '')
+        if (fontName && !isValidFontName(fontName)) {
+          return {
+            valid: false,
+            error: `Invalid font name: ${fontName}`,
+          }
+        }
+      }
     }
     return { valid: true }
   } catch (error) {

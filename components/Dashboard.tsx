@@ -7,7 +7,23 @@ import { DataTable } from './DataTable'
 import { DataChart } from './DataChart'
 import { KPI } from './KPI'
 import { TextComponent } from './TextComponent'
+import { ImageComponent } from './ImageComponent'
 import { AIPrompt } from './AIPrompt'
+import { loadGoogleFont, extractFontNames } from '@/lib/fonts'
+
+// Helper function for agent logging (development only)
+// Note: CORS errors are expected if the agent logging server isn't running - they're harmless
+const agentLog = (data: any) => {
+  if (process.env.NODE_ENV === 'development') {
+    // Silently attempt to log - failures are expected if server isn't running
+    fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      mode: 'no-cors', // Prevents CORS errors from appearing in console
+    }).catch(() => {}) // Silently ignore all errors
+  }
+}
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -142,16 +158,12 @@ export function Dashboard() {
       if (res.ok) {
         const { schema: updatedSchema } = await res.json()
         // #region agent log
-        if (process.env.NODE_ENV === 'development') {
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:142',message:'API response received',data:{componentCount:updatedSchema.components?.length,componentIds:updatedSchema.components?.map((c:any)=>c.id),componentTypes:updatedSchema.components?.map((c:any)=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        }
+        agentLog({location:'Dashboard.tsx:142',message:'API response received',data:{componentCount:updatedSchema.components?.length,componentIds:updatedSchema.components?.map((c:any)=>c.id),componentTypes:updatedSchema.components?.map((c:any)=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
         // #endregion
         // Apply new schema (previousSchema still has the backup)
         setSchema(updatedSchema)
         // #region agent log
-        if (process.env.NODE_ENV === 'development') {
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:144',message:'setSchema called',data:{componentCount:updatedSchema.components?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        }
+        agentLog({location:'Dashboard.tsx:144',message:'setSchema called',data:{componentCount:updatedSchema.components?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
         // #endregion
         // Note: previousSchema will be updated only after successful render
         // If runtime error occurs, ErrorBoundary will roll back to previousSchema
@@ -247,12 +259,20 @@ export function Dashboard() {
   // Log schema changes - MUST be before any conditional returns (Rules of Hooks)
   useEffect(() => {
     if (schema) {
-      if (process.env.NODE_ENV === 'development') {
-        fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:203',message:'Dashboard render with schema',data:{componentCount:schema.components.length,componentIds:schema.components.map(c=>c.id),componentTypes:schema.components.map(c=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      }
+      agentLog({location:'Dashboard.tsx:203',message:'Dashboard render with schema',data:{componentCount:schema.components.length,componentIds:schema.components.map(c=>c.id),componentTypes:schema.components.map(c=>c.type)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})
     }
   }, [schema]);
   // #endregion
+
+  // Load Google Fonts when schema changes
+  useEffect(() => {
+    if (schema) {
+      const fontNames = extractFontNames(schema)
+      fontNames.forEach(fontName => {
+        loadGoogleFont(fontName)
+      })
+    }
+  }, [schema])
 
   if (status === 'loading' || loading) {
     return <div className="p-8">Loading...</div>
@@ -433,9 +453,7 @@ export function Dashboard() {
             {schema.components.map((component, index) => {
               // #region agent log
               const duplicateIds = schema.components.filter(c => c.id === component.id);
-              if (process.env.NODE_ENV === 'development') {
-                fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:337',message:'Mapping component for render',data:{componentId:component.id,componentType:component.type,index,totalComponents:schema.components.length,duplicateCount:duplicateIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-              }
+              agentLog({location:'Dashboard.tsx:337',message:'Mapping component for render',data:{componentId:component.id,componentType:component.type,index,totalComponents:schema.components.length,duplicateCount:duplicateIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})
               // #endregion
               return (
                 <ComponentRenderer
@@ -504,9 +522,7 @@ function ComponentRenderer({
   // Wrap component rendering in error boundary
   try {
     // #region agent log
-    if (process.env.NODE_ENV === 'development') {
-      fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:379',message:'ComponentRenderer switch entry',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    }
+    agentLog({location:'Dashboard.tsx:379',message:'ComponentRenderer switch entry',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})
     // #endregion
     switch (component.type) {
       case 'table':
@@ -525,9 +541,7 @@ function ComponentRenderer({
       case 'histogram':
       case 'composed_chart':
         // #region agent log
-        if (process.env.NODE_ENV === 'development') {
-          fetch('http://127.0.0.1:7242/ingest/16dc12c7-882f-427a-9657-bb345d43bdac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:396',message:'Chart case matched, rendering DataChart',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        }
+        agentLog({location:'Dashboard.tsx:396',message:'Chart case matched, rendering DataChart',data:{componentId:component.id,componentType:component.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})
         // #endregion
         return (
           <div style={style}>
@@ -544,6 +558,12 @@ function ComponentRenderer({
         return (
           <div style={style}>
             <TextComponent component={enhancedComponent} />
+          </div>
+        )
+      case 'image':
+        return (
+          <div style={style}>
+            <ImageComponent component={enhancedComponent} />
           </div>
         )
       default:

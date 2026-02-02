@@ -15,12 +15,30 @@ CONSTRAINTS
 - Output: { "operations": [...] } JSON only. No markdown/explanations.
 
 COMPONENTS
-Types: table, chart, kpi, text, pie_chart, bar_chart, line_chart, area_chart, scatter_chart, radar_chart, histogram, composed_chart
+Types: table, chart, kpi, text, image, pie_chart, bar_chart, line_chart, area_chart, scatter_chart, radar_chart, histogram, composed_chart
 Props:
-- Tables: dataSource, columns (array like ["id","title","price"]), dataColumns (1-4)
+- Tables: dataSource, columns (array like ["id","title","price"]), dataColumns (1-4). Tables automatically display images if data contains image URLs.
 - Charts: dataSource, chartType, xField, yField, color, aggregateFunction ("count"|"sum"|"avg")
 - KPIs: dataSource, field, label, calculation ("sum"|"avg"|"count"|"min"|"max"), format ("currency")
 - Text: content, heading
+- Images: src (required, user-provided URL only), alt (alt text), objectFit (default "contain" in style), objectPosition (position string), lazy (boolean, default true)
+- CRITICAL for Images: ONLY use URLs that the user explicitly provides in their request. NEVER generate, create, or invent image URLs. If user requests an image without providing a URL, DO NOT create an image component.
+
+STYLES (apply via set_style or component.style)
+Typography: fontSize, fontFamily, fontWeight, fontStyle, textAlign, textDecoration, letterSpacing, lineHeight, wordSpacing, textTransform, whiteSpace
+Colors: color, backgroundColor, textColor, borderColor, headerBackgroundColor, headerTextColor, valueColor, labelColor, rowHoverColor
+Backgrounds: backgroundImage (url('...'), linear-gradient(...), radial-gradient(...)), backgroundSize, backgroundPosition, backgroundRepeat
+Effects: backdropFilter, filter, blur, brightness, contrast, saturate, opacity, boxShadow, textShadow
+Layout: width, height, minWidth, minHeight, maxWidth, maxHeight, padding, margin, gap
+Borders: border, borderWidth, borderRadius, borderStyle, borderColor
+Display: display, flexDirection, alignItems, justifyContent, objectFit, objectPosition
+Transitions: transition, transitionDuration, transitionTimingFunction
+Advanced: transform, cursor, pointerEvents, userSelect, outline, outlineOffset, overflowWrap, wordBreak, zIndex
+
+FONTS: Use Google Fonts names: "Roboto", "Montserrat", "Open Sans", "Lato", "Poppins", "Raleway", "Oswald", "Playfair Display", "Merriweather", "Bebas Neue", "Dancing Script", etc.
+System fonts: "system-ui", "sans-serif", "serif", "monospace"
+Font style mappings: "gothic"→"Oswald"/"Bebas Neue", "elegant"→"Playfair Display"/"Merriweather", "modern"→"Roboto"/"Montserrat", "handwritten"→"Dancing Script", "bold"→"Bebas Neue"/"Oswald", "classic"→"Times New Roman"/"serif", "futuristic"→"Orbitron"/"Rajdhani"
+If user describes a font style (e.g., "gothic", "elegant", "modern"), map to appropriate Google Font name.
 
 DATA SOURCES
 - "/api/data": Raw items (id, title, category, price, date). Use for: KPIs, tables, charts by category/field.
@@ -53,8 +71,13 @@ VAGUE REQUESTS ("like X")
 EXAMPLES
 Add chart: {"operations":[{"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"width":"100%","height":"400px"}}}]}
 Add KPI: {"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}}]}
+Add image (user provided URL): {"operations":[{"op":"add_component","component":{"id":"img1","type":"image","props":{"src":"[IMAGE_URL_1]","alt":"Description"},"style":{"width":"100%","height":"300px","borderRadius":"8px","objectFit":"contain"}}}]}
 Two-column with KPIs at top: {"operations":[{"op":"update","path":"layout/columns","value":2},{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}},{"op":"add_component","component":{"id":"kpi2","type":"kpi","props":{"dataSource":"/api/data","calculation":"avg","field":"price","label":"Avg Price"},"style":{"width":"100%"}}},{"op":"reorder_component","id":"kpi1","newIndex":0},{"op":"reorder_component","id":"kpi2","newIndex":1}]}
 Dark mode: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}
+Change font: {"operations":[{"op":"set_style","path":"theme/fontFamily","value":"Roboto"},{"op":"set_style","path":"components[id=table1]/style/fontFamily","value":"Montserrat"}]}
+Background image: {"operations":[{"op":"set_style","path":"components[id=kpi1]/style/backgroundImage","value":"url('https://example.org/real-background.jpg')"},{"op":"set_style","path":"components[id=kpi1]/style/backgroundSize","value":"cover"}]}
+Gradient background: {"operations":[{"op":"set_style","path":"components[id=text1]/style/backgroundImage","value":"linear-gradient(to right, #667eea, #764ba2)"}]}
+Advanced typography: {"operations":[{"op":"set_style","path":"components[id=text1]/style/letterSpacing","value":"0.1em"},{"op":"set_style","path":"components[id=text1]/style/lineHeight","value":"1.8"},{"op":"set_style","path":"components[id=text1]/style/textTransform","value":"uppercase"}]}
 Reorder: {"operations":[{"op":"update","path":"layout/columns","value":1},{"op":"reorder_component","id":"chart1","newIndex":0}]}
 Sort: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"}]}
 Top 10: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"},{"op":"update","path":"filters/limit","value":10}]}
@@ -76,16 +99,67 @@ export async function generateDesignOperations(
     const vague = isVagueRequest(prompt)
     const timeoutMs = 10000 // Fixed 10s timeout
     
+    // If schema is too large, be more aggressive with optimization
+    let finalSchemaJson = schemaJson
+    const schemaSize = new Blob([schemaJson]).size
+    if (schemaSize > 8000) { // ~2000 tokens
+      // Send only essential info
+      const minimalSchema = {
+        theme: optimizedSchema.theme,
+        layout: optimizedSchema.layout,
+        components: optimizedSchema.components.map((c: Component) => ({
+          id: c.id,
+          type: c.type,
+        })),
+      }
+      const minimalJson = JSON.stringify(minimalSchema)
+      const minimalSize = new Blob([minimalJson]).size
+      if (minimalSize < schemaSize * 0.5) {
+        finalSchemaJson = minimalJson
+      }
+    }
+    
     // Detect multiple intents in prompt
     const hasMultipleIntents = /\b(then|and|also|plus|,)\b/i.test(prompt)
     const intents = hasMultipleIntents 
       ? prompt.split(/\b(then|and|also|plus|,)\b/i).map(s => s.trim()).filter(s => s.length > 0)
       : [prompt]
     
-    // Build user prompt with context-aware enhancements
-    let userPrompt = `Current schema: ${schemaJson}
+    // Extract URLs from prompt to handle long URLs (including data URLs)
+    // Store full URLs separately and remove from prompt to save tokens
+    // Match both http/https URLs and data URLs (data:image/...;base64,...)
+    const httpUrlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi
+    // Data URL regex: matches data:image/[type];base64,[base64data] - base64 can include = padding
+    const dataUrlRegex = /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/gi
+    const httpUrls = (prompt.match(httpUrlRegex) || []).map(url => url.trim())
+    const dataUrls = (prompt.match(dataUrlRegex) || []).map(url => url.trim())
+    const extractedUrls = [...httpUrls, ...dataUrls]
+    
+    const urlMap = new Map<number, string>()
+    const urlPlaceholderMap = new Map<string, string>() // Maps placeholder -> full URL
+    
+    // Remove URLs from prompt and replace with placeholders to save tokens
+    let processedPrompt = prompt
+    if (extractedUrls.length > 0) {
+      extractedUrls.forEach((url, index) => {
+        urlMap.set(index, url)
+        const placeholder = `[IMAGE_URL_${index + 1}]`
+        urlPlaceholderMap.set(placeholder, url)
+        // Replace the URL in the prompt with placeholder (escape special regex characters)
+        const escapedUrl = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        processedPrompt = processedPrompt.replace(new RegExp(escapedUrl, 'g'), placeholder)
+      })
+    }
+    
+    // Build user prompt - URLs are now placeholders
+    let userPrompt = `Current schema: ${finalSchemaJson}
 
-User request: ${prompt}`
+User request: ${processedPrompt}`
+    
+    // Add URL mapping if we have URLs (but don't include full URLs - just tell AI to use placeholders)
+    if (urlPlaceholderMap.size > 0) {
+      userPrompt += `\n\nNOTE: The request contains image URLs that have been replaced with placeholders. When creating image components, use these placeholders in the "src" field: ${Array.from(urlPlaceholderMap.keys()).join(', ')}. The placeholders will be automatically replaced with the actual URLs.`
+    }
 
     // Add multi-intent handling
     if (hasMultipleIntents && intents.length > 1) {
@@ -124,9 +198,80 @@ Now generate operations based on this analysis. Limit to 15 operations maximum. 
     if (/\b(top \d+|show only top \d+|only top \d+)\b/i.test(prompt)) {
       userPrompt += `\n\nNOTE: "top N" means filter the table to show only N rows. Set filters/limit to N, filters/sortBy to "price", and filters/sortOrder to "desc" (highest price first). Do NOT add horizontal scrolling or change table layout.`
     }
+    
+    // Add guidance for font style requests
+    if (/\b(font|typeface|typography|text style).*(gothic|elegant|modern|bold|classic|futuristic|handwritten|serif|sans-serif|monospace|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|artistic|minimalist)\b/i.test(prompt) || 
+        /\b(gothic|elegant|modern|bold|classic|futuristic|handwritten|script|decorative|minimal|clean|fancy|formal|casual|playful|serious|tech|retro|vintage|artistic|minimalist)\s+(font|typeface|text|typography)\b/i.test(prompt)) {
+      userPrompt += `\n\nNOTE: Font style interpretation:
+- "gothic" or "bold decorative" → Use "Oswald" or "Bebas Neue" (bold, impactful)
+- "elegant" or "classic" → Use "Playfair Display" or "Merriweather" (serif, elegant)
+- "modern" or "clean" or "minimal" → Use "Roboto" or "Montserrat" (sans-serif, modern)
+- "handwritten" or "script" or "fancy" → Use "Dancing Script" or "Pacifico" (cursive, decorative)
+- "futuristic" or "tech" → Use "Orbitron" or "Rajdhani" (geometric, tech)
+- "formal" or "serious" → Use "Merriweather" or "Lora" (serif, formal)
+- "playful" or "casual" → Use "Comfortaa" or "Nunito" (rounded, friendly)
+- "retro" or "vintage" → Use "Bebas Neue" or "Oswald" (bold, retro)
+Always use actual Google Font names, not style descriptions.`
+    }
+    
+    // Add guidance for image requests without URLs
+    if (/\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(processedPrompt) && extractedUrls.length === 0) {
+      userPrompt += `\n\nCRITICAL: User requested an image but provided no URL. DO NOT create an image component.`
+    }
 
     userPrompt += `\n\nCRITICAL: Return ONLY valid JSON. Start with { and end with }. No markdown, no code blocks, no explanations.
 Return format: { "operations": [...] }`
+
+    // Calculate total token estimate AFTER all content is added
+    // Use very conservative estimate: ~2.5 chars per token to account for tokenization overhead
+    const systemPromptSize = new Blob([SYSTEM_PROMPT]).size
+    const userPromptSize = new Blob([userPrompt]).size
+    const totalSize = systemPromptSize + userPromptSize
+    const totalTokens = Math.round(totalSize / 2.5) // Very conservative: 2.5 chars per token
+    
+    // If total is too large, use a condensed system prompt
+    // Groq limit is 6000 tokens, so we use 5500 as threshold to leave buffer
+    let finalSystemPrompt = SYSTEM_PROMPT
+    let finalUserPrompt = userPrompt
+    if (totalTokens > 5500) { // Increased threshold: 5500 (was 4000) - only condense when truly necessary
+      // Condensed system prompt - remove examples and shorten descriptions
+      finalSystemPrompt = `UI Design Ops. Edit dashboard via JSON ops only.
+
+CONSTRAINTS: Presentation only. Ops: set_style, update, add_component, remove_component, move_component, replace_component, reorder_component. Max 30 components. Output: {"operations":[...]} JSON only. CRITICAL: Each operation MUST have "op" field (not "type").
+
+COMPONENTS: table, chart, kpi, text, image, pie_chart, bar_chart, line_chart, area_chart, scatter_chart, radar_chart, histogram, composed_chart
+Props: Tables: dataSource, columns. Charts: dataSource, chartType, xField, yField, aggregateFunction. KPIs: dataSource, field, label, calculation. Text: content. Images: src (required), alt. Default objectFit="contain" (set in style, not props).
+CRITICAL Images: Only use URLs user provides. Never generate placeholders. If no URL provided, don't create image component.
+
+STYLES: fontSize, fontFamily, fontWeight, color, backgroundColor, textColor, borderColor, padding, margin, border, borderRadius, boxShadow, backgroundImage, objectFit, etc.
+
+DATA: "/api/data" for KPIs/tables/charts by field. "/api/data/summary" DEFAULT for charts.
+
+RULES: Charts default: dataSource="/api/data/summary", xField="month", yField="total". "by category": ADD chart with dataSource="/api/data", xField="category", aggregateFunction="count". KPIs: ALWAYS include dataSource="/api/data". "KPIs at top": After adding, use reorder_component to move to newIndex 0,1. "top N": Set filters/limit=N, filters/sortBy="price", filters/sortOrder="desc". Paths: "theme/mode", "layout/columns", "components[id=X]/style/Y", "filters/sortBy", "filters/sortOrder", "filters/limit".
+
+VAGUE REQUESTS: Identify brand, PRIMARY UI COLOR (#hex), theme mode (dark/light). Generate: 1) Theme colors (mode, backgroundColor, primaryColor, textColor, cardBackgroundColor), 2) Apply to ALL components (charts→style.color, tables→style.textColor, KPIs→style.valueColor+backgroundColor). Limit 15 ops. Examples: Netflix #e50914 dark, Spotify #1db954 dark.
+
+FORMAT: {"operations":[{"op":"add_component","component":{"id":"img1","type":"image","props":{"src":"[IMAGE_URL_1]"}}}]}`
+      
+      // Always reduce user prompt when we condense system prompt to be safe
+      // Remove verbose guidance, keep only essential
+      finalUserPrompt = `Schema: ${finalSchemaJson}\n\nRequest: ${processedPrompt}`
+      
+      // Preserve vague request guidance even when condensing
+      if (vague) {
+        finalUserPrompt += `\n\nVAGUE REQUEST: Identify brand, PRIMARY UI COLOR (#hex), theme mode (dark/light). Set theme colors (mode, backgroundColor, primaryColor, textColor, cardBackgroundColor), then apply to ALL components: charts→style.color, tables→style.textColor, KPIs→style.valueColor+backgroundColor. Limit 15 ops.`
+      }
+      
+      if (urlPlaceholderMap.size > 0) {
+        finalUserPrompt += `\n\nUse placeholders in src: ${Array.from(urlPlaceholderMap.keys()).join(', ')}`
+      }
+      if (extractedUrls.length === 0 && /\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(processedPrompt)) {
+        finalUserPrompt += `\n\nNo image URL provided. Don't create image component.`
+      }
+      finalUserPrompt += `\n\nReturn JSON: {"operations":[...]}`
+    } else {
+      finalUserPrompt = userPrompt
+    }
 
     if (!groq) {
       throw new Error('No AI provider configured. Please set GROQ_API_KEY in your environment variables')
@@ -136,12 +281,12 @@ Return format: { "operations": [...] }`
       groq.chat.completions.create({
         model: 'llama-3.1-8b-instant', // Fast and efficient Groq model
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
+          { role: 'system', content: finalSystemPrompt },
+          { role: 'user', content: finalUserPrompt },
         ],
-        temperature: 0.3, // Lower temperature for more consistent JSON output
+        temperature: 0.2, // Lower temperature for faster, more consistent JSON output
         response_format: { type: 'json_object' },
-        ...(vague ? { max_tokens: 2000 } : {}), // Limit tokens for vague requests to encourage concise output
+        max_tokens: vague ? 2000 : 1500, // Limit tokens for all requests to prevent timeouts
       }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`Timeout after ${timeoutMs/1000}s`)), timeoutMs)
@@ -196,9 +341,6 @@ Return format: { "operations": [...] }`
     }
 
     // Validate and sanitize operations
-    console.log('Raw operations from AI:', JSON.stringify(operations, null, 2))
-    console.log('Number of raw operations:', operations.length)
-    
     const validOps = ['set_style', 'update', 'add_component', 'remove_component', 'move_component', 'replace_component', 'reorder_component']
     let validatedOperations: Operation[] = []
 
@@ -208,14 +350,16 @@ Return format: { "operations": [...] }`
         continue
       }
 
-      if (!op.op || !validOps.includes(op.op)) {
-        console.warn('Skipping operation with invalid op type:', op.op)
+      // Handle both "op" and "type" fields (AI sometimes uses "type" instead of "op")
+      const opType = op.op || op.type
+      if (!opType || !validOps.includes(opType)) {
+        console.warn('Skipping operation with invalid op type:', opType, 'Full op:', op)
         continue
       }
 
       // Validate operation structure based on type
       try {
-        switch (op.op) {
+        switch (opType) {
           case 'set_style':
             if (!op.path || op.value === undefined) {
               console.warn('Invalid set_style operation: missing path or value', op)
@@ -233,25 +377,116 @@ Return format: { "operations": [...] }`
             break
 
           case 'add_component':
-            if (!op.component || !op.component.id || !op.component.type) {
-              console.warn('Invalid add_component operation: missing component, id, or type', op)
+            // Handle both op.component and direct component structure
+            const component = op.component || op
+            if (!component || !component.id || !component.type) {
+              console.warn('Invalid add_component operation: missing component, id, or type', {
+                hasComponent: !!op.component,
+                hasDirectComponent: !!op,
+                componentId: component?.id,
+                componentType: component?.type,
+                fullOp: op
+              })
               continue
             }
             // Ensure component has required props structure
-            const componentType = String(op.component.type)
-            const allowedTypes = ['table', 'chart', 'kpi', 'text', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart'] as const
+            const componentType = String(component.type)
+            const allowedTypes = ['table', 'chart', 'kpi', 'text', 'image', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart', 'histogram', 'composed_chart'] as const
             if (!allowedTypes.includes(componentType as any)) {
               console.warn('Invalid component type:', componentType, 'Allowed types:', allowedTypes)
               continue
             }
-            const component: Component = {
-              id: String(op.component.id),
+            const validatedComponent: Component = {
+              id: String(component.id),
               type: componentType as Component['type'],
-              props: op.component.props || {},
-              style: op.component.style || {},
+              props: component.props || {},
+              style: component.style || {},
             }
-            console.log('✅ Validated add_component:', component.id, component.type)
-            validatedOperations.push({ op: 'add_component', component })
+            
+            // Reject image components with placeholder URLs
+            // Replace placeholders with actual URLs from original prompt
+            if (componentType === 'image') {
+              const imageSrc = validatedComponent.props?.src
+              if (imageSrc && typeof imageSrc === 'string') {
+                let finalSrc = imageSrc
+                
+                // Replace placeholders with actual URLs
+                if (urlPlaceholderMap.size > 0) {
+                  // Check if src is a placeholder
+                  if (urlPlaceholderMap.has(imageSrc)) {
+                    finalSrc = urlPlaceholderMap.get(imageSrc)!
+                  } else {
+                    // Check if placeholder is embedded in the URL string
+                    for (const [placeholder, fullUrl] of Array.from(urlPlaceholderMap.entries())) {
+                      if (imageSrc.includes(placeholder)) {
+                        finalSrc = imageSrc.replace(placeholder, fullUrl)
+                        break
+                      }
+                    }
+                    
+                    // If still no match and we have extracted URLs, try reconstruction
+                    if (finalSrc === imageSrc && urlMap.size > 0) {
+                      // Check if this URL is a prefix of any extracted URL (AI might have truncated it)
+                      if (imageSrc.length < 100 || (!imageSrc.startsWith('http') && !imageSrc.startsWith('data:'))) {
+                        // Try to match against extracted URLs from original prompt
+                        for (const [index, fullUrl] of Array.from(urlMap.entries())) {
+                          const urlStart = imageSrc.replace(/\.\.\.$/, '').replace(/\[truncated\]/i, '').trim()
+                          if (urlStart.length > 20 && fullUrl.startsWith(urlStart)) {
+                            finalSrc = fullUrl
+                            break
+                          }
+                        }
+                      } else {
+                        // Check if this is a partial match (AI might have cut off the end)
+                        for (const [index, fullUrl] of Array.from(urlMap.entries())) {
+                          if (fullUrl.startsWith(imageSrc) && fullUrl.length > imageSrc.length) {
+                            finalSrc = fullUrl
+                            break
+                          }
+                        }
+                      }
+                      
+                      // Fallback: if only one URL was extracted and current src doesn't match, use the extracted one
+                      if (urlMap.size === 1 && !extractedUrls.some(url => url === finalSrc || finalSrc.includes(url.substring(0, 50)))) {
+                        const [firstUrl] = Array.from(urlMap.values())
+                        if (firstUrl.length > finalSrc.length && firstUrl.startsWith(finalSrc.substring(0, Math.min(30, finalSrc.length)))) {
+                          finalSrc = firstUrl
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                validatedComponent.props.src = finalSrc
+                
+                const lowerSrc = finalSrc.toLowerCase()
+                const placeholderPatterns = [
+                  'example.com',
+                  'placeholder',
+                  'via.placeholder.com',
+                  'placehold.it',
+                  'dummyimage.com',
+                  'unsplash.com/photo-1234567890',
+                  'images.unsplash.com/photo-1234567890',
+                  'unsplash.com/photo-',
+                  'images.unsplash.com/photo-',
+                ]
+                if (placeholderPatterns.some(pattern => lowerSrc.includes(pattern))) {
+                  console.warn('Rejecting image component with placeholder URL:', finalSrc)
+                  continue
+                }
+              }
+              
+              // Ensure objectFit defaults to 'contain' in style (not props) to show full image
+              if (!validatedComponent.style) {
+                validatedComponent.style = {}
+              }
+              if (!validatedComponent.style.objectFit) {
+                validatedComponent.style.objectFit = 'contain'
+              }
+            }
+            
+            validatedOperations.push({ op: 'add_component', component: validatedComponent })
             break
 
           case 'remove_component':
@@ -263,11 +498,12 @@ Return format: { "operations": [...] }`
             break
 
           case 'replace_component':
-            if (!op.id || !op.component || !op.component.id || !op.component.type) {
+            const replaceComponent = op.component || op
+            if (!op.id || !replaceComponent || !replaceComponent.id || !replaceComponent.type) {
               console.warn('Invalid replace_component operation: missing id or component', op)
               continue
             }
-            validatedOperations.push({ op: 'replace_component', id: String(op.id), component: op.component })
+            validatedOperations.push({ op: 'replace_component', id: String(op.id), component: replaceComponent })
             break
 
           case 'move_component':
@@ -301,8 +537,18 @@ Return format: { "operations": [...] }`
       }
     }
 
-    if (validatedOperations.length === 0 && operations.length > 0) {
-      throw new Error('No valid operations found in AI response. Please try rephrasing your request.')
+    // Check if this was an image request without URL
+    if (validatedOperations.length === 0) {
+      const isImageRequest = /\b(add|create|insert|show|display).*(image|picture|photo|img)\b/i.test(prompt)
+      const hasUrl = extractedUrls.length > 0
+      
+      if (isImageRequest && !hasUrl) {
+        throw new Error('To add an image, please provide a complete image URL. Example: "add image with url https://example.com/image.jpg" or a data URL like "data:image/png;base64,..."')
+      }
+      
+      if (operations.length > 0) {
+        throw new Error('No valid operations found in AI response. Please try rephrasing your request.')
+      }
     }
 
     // Limit operations for vague requests to prevent timeouts
