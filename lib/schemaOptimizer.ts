@@ -50,7 +50,7 @@ export function getOptimizedSchema(schema: DesignSchema, prompt: string): any {
   }
   
   // Style operations - include current styles for context
-  if (lower.match(/\b(style|color|red|blue|green|font|bigger|smaller|padding|margin|border|fullscreen|width|height|size|resize)\b/)) {
+  if (lower.match(/\b(style|color|red|blue|green|font|bigger|smaller|padding|margin|border|fullscreen|width|height|size|resize|gradient|background)\b/)) {
     return {
       theme: cleaned.theme,
       layout: cleaned.layout,

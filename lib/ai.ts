@@ -1,10 +1,10 @@
-import Groq from 'groq-sdk'
+import Anthropic from '@anthropic-ai/sdk'
 import { DesignSchema, Operation, Component } from './schema'
 import { getOptimizedSchema } from './schemaOptimizer'
 import { extractImageColors, ImageColorAnalysis } from './imageAnalysis'
 
-const groq = process.env.GROQ_API_KEY ? new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 }) : null
 
 // Analyze uploaded image to extract style information
@@ -26,105 +26,85 @@ async function analyzeImageStyle(imageBase64: string): Promise<ImageColorAnalysi
   }
 }
 
-// Consolidated system prompt - always complete, no dynamic building
-const SYSTEM_PROMPT = `You are UI Design Ops. Edit dashboard schema via JSON operations only.
+// Optimized system prompt for Claude 4.5 Haiku
+const SYSTEM_PROMPT = `You are a dashboard design system. Transform user requests into JSON operations.
 
-CONSTRAINTS
-- Only presentation: layout, components, styles, sorting/filtering. Never backend/data/auth/API/db.
-- Max 30 components. Vague requests (brand styling): max 15 ops.
-- Output: {"operations":[...]} JSON only. No markdown/explanations.
-- CRITICAL: Each operation MUST have "op" field (not "type").
+RESPONSE FORMAT: {"operations":[...]} — pure JSON, no markdown or text.
 
-OPERATIONS
-1. set_style: Change theme or component styles
-   Format: {"op":"set_style","path":"theme/X or components[id=ID]/style/X","value":"..."}
-   Paths: theme/mode, theme/backgroundColor, theme/primaryColor, theme/textColor, theme/fontFamily
-          components[id=ID]/style/color, components[id=ID]/style/textColor, components[id=ID]/style/backgroundColor
+## OPERATIONS
 
-2. update: Change props or layout
-   Format: {"op":"update","path":"...","value":"..."}
-   Paths: layout/columns, layout/gap, filters/sortBy, filters/sortOrder, filters/limit
-          components[id=ID]/props/columns (for tables)
+| Operation | Format | Use Case |
+|-----------|--------|----------|
+| set_style | {"op":"set_style","path":"PATH","value":"VAL"} | Change colors, fonts, sizes |
+| update | {"op":"update","path":"PATH","value":"VAL"} | Change layout, filters, props |
+| add_component | {"op":"add_component","component":{...}} | Add new components |
+| remove_component | {"op":"remove_component","id":"ID"} | Delete components |
+| reorder_component | {"op":"reorder_component","id":"ID","newIndex":N} | Move component position |
+| replace_component | {"op":"replace_component","id":"ID","component":{...}} | Swap component type |
 
-3. add_component: Add new component
-   Format: {"op":"add_component","component":{"id":"unique_id","type":"TYPE","props":{...},"style":{...}}}
-   
-4. remove_component: Remove by ID
-   Format: {"op":"remove_component","id":"EXACT_ID_FROM_SCHEMA"}
-   
-5. reorder_component: Change position in array
-   Format: {"op":"reorder_component","id":"EXACT_ID_FROM_SCHEMA","newIndex":N}
-   
-6. replace_component: Replace component with new one
-   Format: {"op":"replace_component","id":"EXACT_ID_FROM_SCHEMA","component":{...}}
+## PATHS
 
-COMPONENT TYPES + REQUIRED PROPS
-- table: dataSource="/api/data", columns=["id","title","price","date"]
-- chart/line_chart: dataSource="/api/data/summary", xField="month", yField="total"
-- pie_chart/bar_chart: dataSource="/api/data", xField="category", aggregateFunction="count"
-- kpi: dataSource="/api/data", calculation="count"|"avg"|"sum", field="price" (for avg/sum), label="Label"
-- text: content="Text content", heading=true|false
-- image: src="USER_PROVIDED_URL" (REQUIRED - never invent URLs)
+Theme: theme/mode, theme/backgroundColor, theme/backgroundImage, theme/primaryColor, theme/textColor, theme/fontFamily
+Layout: layout/columns (grid columns for component arrangement), layout/gap
+Filters: filters/sortBy, filters/sortOrder, filters/limit
+Component styles: components[id=ID]/style/PROPERTY
 
-DATA SOURCES
-- /api/data: Raw items (id, title, category, price, date). Use for: KPIs, tables, charts by category.
-- /api/data/summary: Time series (month, total, count, avgPrice). DEFAULT for line/area charts.
+## COMPONENT EXAMPLES (COPY EXACTLY)
 
-CRITICAL RULES
-1. ALWAYS check schema for existing component IDs before reorder/remove/style operations
-2. NEVER invent component IDs - use ONLY IDs that exist in the schema's components array
-3. For "between X and Y": Find component indices, place at index between them
-   Example: pie1 at index 0, table1 at index 2 → to put img1 between them, use newIndex:1
-4. For "make X red": Find component ID by type in schema, use set_style with that exact ID
-5. For "remove all X": Generate one remove_component per matching component in schema
-6. For "make everything red": Generate set_style for EACH component in schema
-7. For images: NEVER generate/invent URLs - only use user-provided URLs or placeholders
-8. KPIs ALWAYS need dataSource="/api/data" - they will be empty without it
-9. Charts by category use dataSource="/api/data" with xField="category", aggregateFunction="count"
+TEXT - props.content is THE ACTUAL TEXT STRING:
+{"op":"add_component","component":{"id":"text1","type":"text","props":{"content":"Sales Dashboard","heading":true},"style":{"fontSize":"2rem"}}}
 
-STYLE PROPERTIES
-Typography: fontSize, fontFamily, fontWeight, textAlign, letterSpacing, lineHeight, textTransform
-Colors: color (charts), textColor, backgroundColor, borderColor, valueColor (KPIs), labelColor
-Layout: width, height, padding, margin, borderRadius, boxShadow, opacity
+PIE CHART BY CATEGORY - MUST use xField:"category" and dataSource:"/api/data":
+{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
 
-FONTS (Google Fonts)
-"gothic"/"bold" → "Oswald" or "Bebas Neue"
-"elegant"/"classic" → "Playfair Display" or "Merriweather"  
-"modern"/"clean" → "Roboto" or "Montserrat"
-"handwritten" → "Dancing Script"
-"futuristic" → "Orbitron"
+BAR CHART BY CATEGORY:
+{"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
 
-EXAMPLES
-Dark mode: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"}]}
+LINE CHART (time series):
+{"op":"add_component","component":{"id":"chart1","type":"line_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"height":"400px"}}}
 
-Add pie chart: {"operations":[{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"width":"100%","height":"400px"}}}]}
+KPI:
+{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{}}}
 
-Add KPI: {"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}}]}
+TABLE (dataColumns splits data into side-by-side tables):
+{"op":"add_component","component":{"id":"table1","type":"table","props":{"dataSource":"/api/data","columns":["id","title","category","price","date"],"dataColumns":1},"style":{}}}
 
-Add KPIs at top: When user says "at top/beginning", add components THEN reorder each to front (index 0,1,2...)
-Example "Add 3 KPIs at top": {"operations":[{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{"width":"100%"}}},{"op":"add_component","component":{"id":"kpi2","type":"kpi","props":{"dataSource":"/api/data","calculation":"avg","field":"price","label":"Avg Price"},"style":{"width":"100%"}}},{"op":"add_component","component":{"id":"kpi3","type":"kpi","props":{"dataSource":"/api/data","calculation":"max","field":"price","label":"Max Price"},"style":{"width":"100%"}}},{"op":"reorder_component","id":"kpi1","newIndex":0},{"op":"reorder_component","id":"kpi2","newIndex":1},{"op":"reorder_component","id":"kpi3","newIndex":2}]}
+## DATA SOURCES
+- /api/data: Raw items with fields: id, title, category, price, date
+- /api/data/summary: Monthly aggregates with: month, total, count, avgPrice
 
-IMPORTANT FOR KPIs: NEVER set height on KPIs - they need auto-height to display properly. Only set width.
+## GRADIENTS (use theme/backgroundImage or component style/backgroundImage)
+- Sunset: "linear-gradient(135deg, #f093fb 0%, #f5576c 50%, #ff9966 100%)"
+- Ocean: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+- Forest: "linear-gradient(135deg, #134e5e 0%, #71b280 100%)"
 
-Style chart red: {"operations":[{"op":"set_style","path":"components[id=chart1]/style/color","value":"#ff0000"}]}
+## BRAND STYLES
+| Brand | Mode | Background | Primary | Text |
+|-------|------|------------|---------|------|
+| Netflix | dark | #141414 | #e50914 | #ffffff |
+| Spotify | dark | #121212 | #1db954 | #ffffff |
+| Uber Eats | light | #ffffff | #06c167 | #142328 |
+| GitHub | dark | #0d1117 | #238636 | #c9d1d9 |
 
-Reorder (put chart at top): {"operations":[{"op":"reorder_component","id":"chart1","newIndex":0}]}
+## DISAMBIGUATION - "COLUMNS" HAS 3 MEANINGS
 
-Put image between pie and table: {"operations":[{"op":"reorder_component","id":"img1","newIndex":1}]}
+1. **Layout columns** ("two columns", "3 column layout") = layout/columns (grid arrangement of components)
+2. **Table data columns** ("table in 2 columns", "split table into 3 columns") = props.dataColumns (splits rows into side-by-side tables)
+3. **Table attribute columns** ("only show id and price", "hide category column") = props.columns array
 
-Replace chart with pie: {"operations":[{"op":"replace_component","id":"chart1","component":{"id":"chart1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"width":"100%","height":"400px"}}}]}
+EXAMPLES:
+- "two columns" → {"op":"update","path":"layout/columns","value":2}
+- "table in 2 columns" → {"op":"update","path":"components[id=table1]/props/dataColumns","value":2}
+- "split the table into 3 columns" → {"op":"update","path":"components[id=table1]/props/dataColumns","value":3}
+- "only show title and price" → {"op":"update","path":"components[id=table1]/props/columns","value":["title","price"]}
 
-Remove all images: {"operations":[{"op":"remove_component","id":"img1"},{"op":"remove_component","id":"img2"}]}
-
-Top 10 by price: {"operations":[{"op":"update","path":"filters/sortBy","value":"price"},{"op":"update","path":"filters/sortOrder","value":"desc"},{"op":"update","path":"filters/limit","value":10}]}
-
-Table only show title and price: {"operations":[{"op":"update","path":"components[id=table1]/props/columns","value":["title","price"]}]}
-
-Netflix style: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#141414"},{"op":"set_style","path":"theme/primaryColor","value":"#e50914"},{"op":"set_style","path":"theme/textColor","value":"#ffffff"},{"op":"set_style","path":"components[id=chart1]/style/color","value":"#e50914"},{"op":"set_style","path":"components[id=table1]/style/textColor","value":"#e50914"}]}
-
-Spotify style: {"operations":[{"op":"set_style","path":"theme/mode","value":"dark"},{"op":"set_style","path":"theme/backgroundColor","value":"#121212"},{"op":"set_style","path":"theme/primaryColor","value":"#1db954"},{"op":"set_style","path":"theme/textColor","value":"#ffffff"},{"op":"set_style","path":"components[id=chart1]/style/color","value":"#1db954"}]}
-
-Uber Eats style: {"operations":[{"op":"set_style","path":"theme/mode","value":"light"},{"op":"set_style","path":"theme/backgroundColor","value":"#ffffff"},{"op":"set_style","path":"theme/primaryColor","value":"#06c167"},{"op":"set_style","path":"theme/textColor","value":"#000000"},{"op":"set_style","path":"components[id=chart1]/style/color","value":"#06c167"}]}`
+## CRITICAL RULES
+1. TEXT content: props.content MUST be the exact text string user wants displayed
+2. PIE/BAR by category: MUST use dataSource:"/api/data", xField:"category"
+3. For KPIs: never set height, always include dataSource="/api/data"
+4. For images: only use URLs explicitly provided by user
+5. For "at top": add component, then reorder to newIndex:0
+6. Only reference component IDs that exist in the schema`
 
 export async function generateDesignOperations(
   prompt: string,
@@ -210,30 +190,28 @@ User request: ${processedPrompt}`
   // Use timeout for API calls (design spec: cancel LLM after 10s)
   const timeoutMs = 10000
 
-    if (!groq) {
-      throw new Error('No AI provider configured. Please set GROQ_API_KEY in your environment variables')
-    }
-    
-    const completion = await Promise.race([
-      groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
-        messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-        ],
-      temperature: 0.2,
-        response_format: { type: 'json_object' },
+  if (!anthropic) {
+    throw new Error('No AI provider configured. Please set ANTHROPIC_API_KEY in your environment variables')
+  }
+  
+  const message = await Promise.race([
+    anthropic.messages.create({
+      model: 'claude-haiku-4-5',
       max_tokens: 2000,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout after ${timeoutMs/1000}s`)), timeoutMs)
-      ),
-    ])
+      system: SYSTEM_PROMPT,
+      messages: [
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs/1000}s`)), timeoutMs)
+    ),
+  ])
 
-    const content = completion.choices[0]?.message?.content
-    if (!content) {
-      throw new Error('No response from AI. Please try again.')
-    }
+  const content = message.content[0]?.type === 'text' ? message.content[0].text : null
+  if (!content) {
+    throw new Error('No response from AI. Please try again.')
+  }
 
   // Parse JSON response
     let operations: any[] = []

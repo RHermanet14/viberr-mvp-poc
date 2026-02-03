@@ -358,6 +358,7 @@ export function Dashboard() {
 
   const themeStyles = {
     backgroundColor: getBackgroundColor(),
+    backgroundImage: schema.theme.backgroundImage,
     color: getTextColor(),
     fontSize: schema.theme.fontSize,
     fontFamily: schema.theme.fontFamily,

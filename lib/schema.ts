@@ -98,6 +98,7 @@ export interface DesignSchema {
     fontSize: string
     fontFamily: string
     backgroundColor?: string
+    backgroundImage?: string // CSS gradient support
     textColor?: string
     borderColor?: string
     cardBackgroundColor?: string
