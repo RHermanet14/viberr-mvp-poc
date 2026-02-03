@@ -166,11 +166,21 @@ User request: ${processedPrompt}`
 
   // Handle uploaded images
   if (isAddImageIntent) {
+    // Find the next available image ID by checking existing components
+    const existingImageIds = currentSchema.components
+      .filter(c => c.id.startsWith('img'))
+      .map(c => {
+        const match = c.id.match(/^img(\d+)$/)
+        return match ? parseInt(match[1], 10) : 0
+      })
+    const maxExistingId = existingImageIds.length > 0 ? Math.max(...existingImageIds) : 0
+    
     userPrompt += `\n\nUser uploaded ${uploadedImages.length} image(s) to ADD as components.`
     uploadedImages.forEach((_, index) => {
         const placeholder = `[UPLOADED_IMAGE_${index + 1}]`
       urlPlaceholderMap.set(placeholder, uploadedImages[index])
-      userPrompt += `\nCreate add_component for image ${index + 1}: id="img${index + 1}", src="${placeholder}"`
+      const newImageId = maxExistingId + index + 1
+      userPrompt += `\nCreate add_component for image ${index + 1}: id="img${newImageId}", src="${placeholder}"`
     })
   } else if (isStyleIntent && uploadedImageStyles.length > 0) {
     userPrompt += `\n\nUser uploaded image(s) for STYLE REPLICATION. Extract style analysis:`
@@ -182,7 +192,14 @@ User request: ${processedPrompt}`
       userPrompt += `\n- Theme: ${style.themeMode}`
       userPrompt += `\n- Colors: ${style.primaryColors.slice(0, 5).join(', ')}`
     })
+    // List all existing component IDs for explicit styling
+    const componentIds = currentSchema.components.map(c => c.id)
     userPrompt += `\n\nApply these EXACT colors to theme and ALL components. Do NOT add image components.`
+    userPrompt += `\nGenerate set_style operations for EACH of these components: ${componentIds.join(', ')}`
+    userPrompt += `\nFor charts (bar_chart, pie_chart, line_chart, etc): set backgroundColor, color (for chart lines/bars)`
+    userPrompt += `\nFor KPIs: set backgroundColor, color, valueColor, labelColor`
+    userPrompt += `\nFor tables: set backgroundColor, color, headerBackgroundColor, headerTextColor`
+    userPrompt += `\nFor text: set color`
   }
 
   userPrompt += `\n\nReturn ONLY valid JSON: {"operations":[...]}`
@@ -199,19 +216,19 @@ User request: ${processedPrompt}`
       model: 'claude-haiku-4-5',
       max_tokens: 2000,
       system: SYSTEM_PROMPT,
-      messages: [
+        messages: [
         { role: 'user', content: userPrompt },
-      ],
-    }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs/1000}s`)), timeoutMs)
-    ),
-  ])
+        ],
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout after ${timeoutMs/1000}s`)), timeoutMs)
+      ),
+    ])
 
   const content = message.content[0]?.type === 'text' ? message.content[0].text : null
-  if (!content) {
-    throw new Error('No response from AI. Please try again.')
-  }
+    if (!content) {
+      throw new Error('No response from AI. Please try again.')
+    }
 
   // Parse JSON response
     let operations: any[] = []
@@ -234,8 +251,8 @@ User request: ${processedPrompt}`
             operations = Array.isArray(parsed) ? parsed : parsed.operations || []
           } catch {
           throw new Error('Failed to parse AI response. Please try rephrasing your request.')
-        }
-      } else {
+              }
+            } else {
         throw new Error('Failed to parse AI response. Please try rephrasing your request.')
         }
       }
@@ -361,10 +378,10 @@ User request: ${processedPrompt}`
             if (!validatedComponent.style.objectFit) validatedComponent.style.objectFit = 'contain'
             }
             
-          validatedOperations.push({ op: 'add_component', component: validatedComponent })
-          break
+            validatedOperations.push({ op: 'add_component', component: validatedComponent })
+            break
 
-        case 'remove_component':
+          case 'remove_component':
           if (!op.id) continue
             validatedOperations.push({ op: 'remove_component', id: String(op.id) })
             break
@@ -403,7 +420,7 @@ User request: ${processedPrompt}`
     if (isImageRequest && extractedUrls.length === 0 && uploadedImages.length === 0) {
       throw new Error('To add an image, please provide an image URL or upload an image.')
     }
-    if (operations.length > 0) {
+      if (operations.length > 0) {
       throw new Error('No valid operations found. Please try rephrasing your request.')
     }
   }
