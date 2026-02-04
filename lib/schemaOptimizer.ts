@@ -88,6 +88,14 @@ export function isVagueRequest(prompt: string): boolean {
   ]
   if (vaguePhrases.some(p => lower.includes(p))) return true
 
+  // Known brands and gradient-worthy keywords
+  const brandKeywords = [
+    'instagram', 'spotify', 'twitter', 'netflix', 'facebook', 'tiktok', 'youtube',
+    'rainbow', 'sunset', 'sunrise', 'ocean', 'aurora', 'northern lights', 'neon',
+    'vibrant', 'energetic', 'dreamy', 'aesthetic', 'vibe', 'mood'
+  ]
+  if (brandKeywords.some(k => lower.includes(k))) return true
+
   // "X mode" pattern (Netflix mode, Spotify mode) but NOT dark/light mode
   if (/\b\w+\s+mode\b/.test(lower) && !/\b(dark|light)\s+mode\b/.test(lower)) return true
 

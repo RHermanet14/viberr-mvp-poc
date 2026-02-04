@@ -97,6 +97,66 @@ Think holistically — match the feeling. Use individual set_style ops for theme
 
 Be creative with ANY aesthetic — interpret the mood and apply cohesive theme + font + animation + hover styles.
 
+## GRADIENTS — WHEN & HOW
+If a gradient would better match the vibe, prefer 3-5 color gradients for backgroundImage and a few component backgrounds; otherwise use solid colors.
+
+GRADIENT DECISION:
+1. NATURAL GRADIENT CONCEPTS (rainbow, sunset, sunrise, aurora, northern lights, ocean, fire, lava, sky):
+   - These ARE gradients by nature → apply gradient to background AND most/all components
+   - Use colors that authentically represent the concept (infer appropriate palette)
+   - Components should each show gradient variations (different angles, color subsets)
+
+2. BRANDS WITH GRADIENT IDENTITY (instagram, tiktok, or any brand known for gradient logos):
+   - Gradient on theme/backgroundImage only
+   - Components use SOLID colors from the brand palette (not gradients)
+   - Pick 2-3 accent colors from brand identity for component backgrounds, borders, text
+
+3. BRANDS WITHOUT GRADIENT IDENTITY (spotify, twitter, netflix, facebook):
+   - Use solid backgroundColor (not gradient) matching brand
+   - Components use brand accent colors as solids
+   - Can use subtle gradients sparingly if it enhances the look
+
+4. MOOD/VIBE WORDS (vibrant, dreamy, energetic, psychedelic, neon, holographic):
+   - Judge if gradient fits the mood — prefer gradient for colorful/dynamic moods
+   - Use solid for calm/minimal/corporate moods
+
+GRADIENT CONSTRUCTION:
+- Pick a palette of 3-5 colors that matches the vibe/brand/concept
+- Use linear-gradient or radial-gradient CSS syntax
+- Vary angles per component for visual interest (45deg, 135deg, 180deg, -45deg)
+
+SUBCOMPONENT VARIETY:
+- Derive 3-5 colors from the requested vibe/brand
+- Distribute colors across components (each component can have different accent)
+- Charts: set seriesColors[] with multiple palette colors
+- Tables: headerBackgroundColor, rowStripeColor from palette
+- KPIs: vary background or border color per KPI
+
+VIBE REQUEST SCOPE:
+1. GLOBAL VIBE (no specific component mentioned): "make it look like X", "X vibe", "X style", "X aesthetic"
+   - Affects ENTIRE dashboard: theme + ALL components + ALL animations
+   - Must reset/update animations to match new vibe (remove old animations if they don't fit)
+   - Example: "make it look like netflix" → restyle theme AND every component AND reset animations
+
+2. TARGETED VIBE (specific component mentioned): "make THE TABLE look like X", "give the chart X vibe"
+   - Affects ONLY the mentioned component(s)
+   - Do NOT touch theme or other components
+   - Example: "make the table have a sunset vibe" → only restyle that table
+
+3. EXCLUSIONS ("but keep X", "except X", "don't change X"):
+   - Apply vibe globally EXCEPT to the explicitly excluded component(s)
+   - Example: "make it look like ocean but keep the table" → restyle everything except table
+
+FULL STYLE TRANSITIONS:
+When user requests a new vibe/style (global), ALWAYS update:
+- theme (mode, backgroundColor/backgroundImage, primaryColor, textColor, fontFamily)
+- ALL component styles (backgrounds, borders, text colors)
+- ALL component animations (set animate:"none" or a fitting animation — do NOT leave old animations)
+- Chart seriesColors and chartTheme
+- Table colors (header, stripes, dividers, row backgrounds)
+- styleHover effects (update or remove to match new vibe)
+This ensures switching from one style to another fully transforms the dashboard with no leftover styles.
+
 ## COLUMNS DISAMBIGUATION
 "two columns" (layout) → {"op":"update","path":"layout/columns","value":2}
 "table in 2 columns" (split data) → {"op":"update","path":"components[id=table1]/props/dataColumns","value":2}
@@ -109,9 +169,11 @@ Be creative with ANY aesthetic — interpret the mood and apply cohesive theme +
 4. Images: only user-provided URLs
 5. "at top": add_component then reorder to newIndex:0
 6. Only reference existing component IDs
-7. Vibe requests: apply theme AND style each component
+7. Vibe/brand requests: FULLY restyle theme AND ALL components (use gradient decision rules above)
 8. AVOID: position:fixed/absolute, zIndex>100
-9. UNIQUE IDs: When adding multiple components, use unique IDs (pie1, pie2, bar1, bar2, kpi1, kpi2, etc.)`
+9. UNIQUE IDs: When adding multiple components, use unique IDs (pie1, pie2, bar1, bar2, kpi1, kpi2, etc.)
+10. TEXT CONTRAST: When setting background colors, ensure text remains readable. Dark bg → light text, light bg → dark text. Avoid low-contrast combinations.
+11. TABLE HOVER: Do NOT use scale/zoom transforms on tables — they crop content. Use subtle effects like background color change, border glow, or translateY instead.`
 
 export async function generateDesignOperations(
   prompt: string,
