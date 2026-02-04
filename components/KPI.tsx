@@ -103,14 +103,19 @@ export function KPI({ component, theme }: KPIProps) {
   const defaultLabelColor = component.style?.labelColor || theme?.textColor || (isDarkMode ? '#d1d5db' : '#6b7280')
   const defaultValueColor = component.style?.valueColor || theme?.textColor || (isDarkMode ? '#ffffff' : '#111827')
 
+  // Determine if backgroundColor was explicitly set (not just from theme/default)
+  const hasExplicitBgColor = component.style?.backgroundColor !== undefined
+  const hasExplicitBgImage = component.style?.backgroundImage !== undefined
+  
   // Apply custom styles from component.style, with theme-aware fallbacks
+  // If backgroundColor is explicitly set, clear backgroundImage to prevent gradient persistence
+  // If backgroundImage is explicitly set, it takes precedence over backgroundColor
   const kpiStyle = {
     padding: component.style?.padding || '1.5rem',
     border: component.style?.border || `1px solid ${defaultBorderColor}`,
     borderColor: component.style?.borderColor || theme?.borderColor || defaultBorderColor,
     borderRadius: component.style?.borderRadius || '0.5rem',
     backgroundColor: component.style?.backgroundColor || theme?.cardBackgroundColor || defaultBgColor,
-    backgroundImage: component.style?.backgroundImage,
     backgroundSize: component.style?.backgroundSize || 'cover',
     backgroundPosition: component.style?.backgroundPosition || 'center',
     backgroundRepeat: component.style?.backgroundRepeat || 'no-repeat',
@@ -122,6 +127,8 @@ export function KPI({ component, theme }: KPIProps) {
     maxWidth: component.style?.maxWidth || '100%',
     overflow: 'hidden',
     ...component.style,
+    // Apply backgroundImage logic after spread: if backgroundColor is set but backgroundImage is not, clear gradient
+    backgroundImage: hasExplicitBgColor && !hasExplicitBgImage ? 'none' : component.style?.backgroundImage,
   }
   const cardStyle = component.style?.cardStyle === true
 
@@ -149,7 +156,8 @@ export function KPI({ component, theme }: KPIProps) {
         className="text-sm mb-2"
         style={{
           color: component.style?.labelColor || theme?.textColor || defaultLabelColor,
-          fontSize: component.style?.fontSize,
+          fontSize: component.style?.labelFontSize || component.style?.fontSize,
+          fontWeight: component.style?.labelFontWeight,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -161,7 +169,8 @@ export function KPI({ component, theme }: KPIProps) {
         className="font-bold"
         style={{
           color: component.style?.valueColor || theme?.textColor || defaultValueColor,
-          fontSize: component.style?.fontSize || '1.875rem',
+          fontSize: component.style?.valueFontSize || component.style?.fontSize || '1.875rem',
+          fontWeight: component.style?.valueFontWeight || 'bold',
           overflow: 'hidden',
           wordBreak: 'break-word',
           // Allow font size to scale down if needed

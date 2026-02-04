@@ -11,7 +11,7 @@ import {
   ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts'
-import { Component } from '@/lib/schema'
+import { Component, ChartTheme } from '@/lib/schema'
 
 interface DataChartProps {
   component: Component
@@ -130,6 +130,44 @@ export function DataChart({ component }: DataChartProps) {
   }
   const cardStyle = component.style?.cardStyle === true
 
+  // Extract chartTheme for styling Recharts internals
+  const chartTheme: ChartTheme = component.props.chartTheme || {}
+  const gridColor = chartTheme.gridColor || '#e5e7eb'
+  const gridOpacity = chartTheme.gridOpacity ?? 1
+  const axisColor = chartTheme.axisColor || '#666'
+  const tickColor = chartTheme.tickColor || '#666'
+  const tickFontSize = chartTheme.tickFontSize || 12
+  const tickFontFamily = chartTheme.tickFontFamily
+  const tooltipBg = chartTheme.tooltipBg || '#fff'
+  const tooltipTextColor = chartTheme.tooltipTextColor || '#333'
+  const tooltipBorderColor = chartTheme.tooltipBorderColor || '#ccc'
+  const tooltipBorderRadius = chartTheme.tooltipBorderRadius || 4
+  const legendTextColor = chartTheme.legendTextColor || '#666'
+  const legendFontSize = chartTheme.legendFontSize || 12
+  const cursorColor = chartTheme.cursorColor || '#ccc'
+  const seriesColors = chartTheme.seriesColors || [chartColor]
+  
+  // Common tick style for axes
+  const tickStyle = {
+    fill: tickColor,
+    fontSize: tickFontSize,
+    ...(tickFontFamily && { fontFamily: tickFontFamily }),
+  }
+  
+  // Tooltip content style
+  const tooltipContentStyle = {
+    backgroundColor: tooltipBg,
+    color: tooltipTextColor,
+    border: `1px solid ${tooltipBorderColor}`,
+    borderRadius: typeof tooltipBorderRadius === 'number' ? `${tooltipBorderRadius}px` : tooltipBorderRadius,
+  }
+  
+  // Legend wrapper style
+  const legendWrapperStyle = {
+    color: legendTextColor,
+    fontSize: typeof legendFontSize === 'number' ? `${legendFontSize}px` : legendFontSize,
+  }
+
   if (loading) {
     return <div className="p-4">Loading chart...</div>
   }
@@ -139,14 +177,24 @@ export function DataChart({ component }: DataChartProps) {
     margin: { top: 5, right: 30, left: 20, bottom: 5 },
   }
 
+  // Determine if backgroundColor was explicitly set
+  const hasExplicitBgColor = component.style?.backgroundColor !== undefined
+  const hasExplicitBgImage = component.style?.backgroundImage !== undefined
+
+  // Spread full component.style for CSS-anywhere support
   const chartWrapperStyle = {
     padding: cardStyle ? '1rem' : '0',
     borderRadius: cardStyle ? '0.75rem' : '0',
-    backgroundColor: component.style?.backgroundColor,
     boxShadow: cardStyle ? (component.style?.boxShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)') : component.style?.boxShadow,
     transition: cardStyle ? 'box-shadow 0.3s ease' : undefined,
     minHeight: typeof chartHeight === 'number' ? `${chartHeight}px` : chartHeight,
     width: component.style?.width || '100%',
+    // Spread all style properties for full CSS support
+    ...component.style,
+    // Ensure these take precedence after spread
+    backgroundColor: component.style?.backgroundColor,
+    // If backgroundColor is set but backgroundImage is not, clear gradient
+    backgroundImage: hasExplicitBgColor && !hasExplicitBgImage ? 'none' : component.style?.backgroundImage,
   }
 
   const chartContent = (() => {
@@ -169,12 +217,12 @@ export function DataChart({ component }: DataChartProps) {
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart {...commonProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={xField} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey={barValueField} fill={chartColor} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} strokeOpacity={gridOpacity} />
+              <XAxis dataKey={xField} stroke={axisColor} tick={tickStyle} />
+              <YAxis stroke={axisColor} tick={tickStyle} />
+              <Tooltip contentStyle={tooltipContentStyle} cursor={{ fill: cursorColor, fillOpacity: 0.1 }} />
+              <Legend wrapperStyle={legendWrapperStyle} />
+              <Bar dataKey={barValueField} fill={seriesColors[0] || chartColor} />
             </BarChart>
           </ResponsiveContainer>
         )
@@ -206,7 +254,10 @@ export function DataChart({ component }: DataChartProps) {
           <ResponsiveContainer width="100%" height={chartHeight}>
             <PieChart>
               <Pie
-                data={data}
+                data={data.map((item, idx) => ({
+                  ...item,
+                  fill: seriesColors[idx % seriesColors.length] || chartColor,
+                }))}
                 dataKey={pieValueField}
                 nameKey={xField}
                 cx="50%"
@@ -215,8 +266,8 @@ export function DataChart({ component }: DataChartProps) {
                 fill={chartColor}
                 label
               />
-              <Tooltip />
-              <Legend />
+              <Tooltip contentStyle={tooltipContentStyle} />
+              <Legend wrapperStyle={legendWrapperStyle} />
             </PieChart>
           </ResponsiveContainer>
         )
@@ -224,12 +275,12 @@ export function DataChart({ component }: DataChartProps) {
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <AreaChart {...commonProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={xField} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Area type="monotone" dataKey={yField} stroke={chartColor} fill={chartColor} fillOpacity={0.6} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} strokeOpacity={gridOpacity} />
+              <XAxis dataKey={xField} stroke={axisColor} tick={tickStyle} />
+              <YAxis stroke={axisColor} tick={tickStyle} />
+              <Tooltip contentStyle={tooltipContentStyle} cursor={{ stroke: cursorColor }} />
+              <Legend wrapperStyle={legendWrapperStyle} />
+              <Area type="monotone" dataKey={yField} stroke={seriesColors[0] || chartColor} fill={seriesColors[0] || chartColor} fillOpacity={0.6} />
             </AreaChart>
           </ResponsiveContainer>
         )
@@ -237,12 +288,12 @@ export function DataChart({ component }: DataChartProps) {
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <ScatterChart {...commonProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={xField} />
-              <YAxis dataKey={yField} />
-              <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-              <Legend />
-              <Scatter dataKey={yField} fill={chartColor} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} strokeOpacity={gridOpacity} />
+              <XAxis dataKey={xField} stroke={axisColor} tick={tickStyle} />
+              <YAxis dataKey={yField} stroke={axisColor} tick={tickStyle} />
+              <Tooltip contentStyle={tooltipContentStyle} cursor={{ strokeDasharray: '3 3', stroke: cursorColor }} />
+              <Legend wrapperStyle={legendWrapperStyle} />
+              <Scatter dataKey={yField} fill={seriesColors[0] || chartColor} />
             </ScatterChart>
           </ResponsiveContainer>
         )
@@ -250,12 +301,12 @@ export function DataChart({ component }: DataChartProps) {
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <RadarChart data={data}>
-              <PolarGrid />
-              <PolarAngleAxis dataKey={xField} />
-              <PolarRadiusAxis />
-              <Radar name={yField} dataKey={yField} stroke={chartColor} fill={chartColor} fillOpacity={0.6} />
-              <Legend />
-              <Tooltip />
+              <PolarGrid stroke={gridColor} />
+              <PolarAngleAxis dataKey={xField} tick={tickStyle} />
+              <PolarRadiusAxis tick={tickStyle} />
+              <Radar name={yField} dataKey={yField} stroke={seriesColors[0] || chartColor} fill={seriesColors[0] || chartColor} fillOpacity={0.6} />
+              <Legend wrapperStyle={legendWrapperStyle} />
+              <Tooltip contentStyle={tooltipContentStyle} />
             </RadarChart>
           </ResponsiveContainer>
         )
@@ -263,13 +314,13 @@ export function DataChart({ component }: DataChartProps) {
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <ComposedChart {...commonProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={xField} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey={yField} fill={chartColor} fillOpacity={0.6} />
-              <Line type="monotone" dataKey={yField} stroke={chartColor} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} strokeOpacity={gridOpacity} />
+              <XAxis dataKey={xField} stroke={axisColor} tick={tickStyle} />
+              <YAxis stroke={axisColor} tick={tickStyle} />
+              <Tooltip contentStyle={tooltipContentStyle} cursor={{ stroke: cursorColor }} />
+              <Legend wrapperStyle={legendWrapperStyle} />
+              <Bar dataKey={yField} fill={seriesColors[0] || chartColor} fillOpacity={0.6} />
+              <Line type="monotone" dataKey={yField} stroke={seriesColors[1] || seriesColors[0] || chartColor} />
             </ComposedChart>
           </ResponsiveContainer>
         )
@@ -278,12 +329,12 @@ export function DataChart({ component }: DataChartProps) {
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <LineChart {...commonProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={xField} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey={yField} stroke={chartColor} />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} strokeOpacity={gridOpacity} />
+              <XAxis dataKey={xField} stroke={axisColor} tick={tickStyle} />
+              <YAxis stroke={axisColor} tick={tickStyle} />
+              <Tooltip contentStyle={tooltipContentStyle} cursor={{ stroke: cursorColor }} />
+              <Legend wrapperStyle={legendWrapperStyle} />
+              <Line type="monotone" dataKey={yField} stroke={seriesColors[0] || chartColor} />
             </LineChart>
           </ResponsiveContainer>
         )

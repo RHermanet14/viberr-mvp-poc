@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Component as ReactComponent, ErrorInfo, ReactNode } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { DesignSchema, Component as SchemaComponent, getDefaultSchema, getBlankSchema, getDarkDefaultSchema, getDarkBlankSchema } from '@/lib/schema'
+import { DesignSchema, Component as SchemaComponent, getDefaultSchema, getBlankSchema, getDarkDefaultSchema, getDarkBlankSchema, sanitizeStyle, getAnimationClass, AnimationPreset } from '@/lib/schema'
 import { DataTable } from './DataTable'
 import { DataChart } from './DataChart'
 import { KPI } from './KPI'
@@ -819,9 +819,26 @@ function ComponentRenderer({
   filters?: DesignSchema['filters']
   onError?: (error: Error) => void
 }) {
+  const [isHovered, setIsHovered] = useState(false)
+  
+  // Apply guardrails to component style to prevent layout-breaking CSS
+  const safeStyle = sanitizeStyle(component.style)
+  
+  // Get animation class from preset
+  const animationClass = getAnimationClass(component.style?.animate as AnimationPreset)
+  
+  // Build animation style overrides (duration, delay)
+  const animationStyleOverrides: Record<string, string> = {}
+  if (component.style?.animationDuration) {
+    animationStyleOverrides.animationDuration = component.style.animationDuration
+  }
+  if (component.style?.animationDelay) {
+    animationStyleOverrides.animationDelay = component.style.animationDelay
+  }
+  
   // Merge component style with theme-aware defaults
-  const style = {
-    ...component.style,
+  const baseStyle = {
+    ...safeStyle,
     // If component doesn't have a color, use theme primary color
     color: component.style?.color || (component.type === 'chart' ? schema.theme.primaryColor : undefined),
     ...(component.position && {
@@ -838,7 +855,21 @@ function ComponentRenderer({
         gridRow: `span ${component.position.height || 1}`,
       }),
     }),
+    // Add smooth transition for hover effects
+    transition: component.style?.transition || (component.styleHover ? 'all 0.2s ease' : undefined),
+    ...animationStyleOverrides,
   }
+  
+  // Apply hover styles when hovered
+  const style = isHovered && component.styleHover 
+    ? { ...baseStyle, ...component.styleHover }
+    : baseStyle
+  
+  // Hover handlers
+  const hoverHandlers = component.styleHover ? {
+    onMouseEnter: () => setIsHovered(true),
+    onMouseLeave: () => setIsHovered(false),
+  } : {}
 
   // Create enhanced component with theme color if not specified
   const enhancedComponent = {
@@ -854,7 +885,7 @@ function ComponentRenderer({
     switch (component.type) {
       case 'table':
         return (
-          <div style={style}>
+          <div style={style} className={animationClass} {...hoverHandlers}>
             <DataTable component={enhancedComponent} filters={filters} theme={schema.theme} />
           </div>
         )
@@ -868,25 +899,25 @@ function ComponentRenderer({
       case 'histogram':
       case 'composed_chart':
         return (
-          <div style={style}>
+          <div style={style} className={animationClass} {...hoverHandlers}>
             <DataChart component={enhancedComponent} />
           </div>
         )
       case 'kpi':
         return (
-          <div style={style}>
+          <div style={style} className={animationClass} {...hoverHandlers}>
             <KPI component={enhancedComponent} theme={schema.theme} />
           </div>
         )
       case 'text':
         return (
-          <div style={style}>
+          <div style={style} className={animationClass} {...hoverHandlers}>
             <TextComponent component={enhancedComponent} />
           </div>
         )
       case 'image':
         return (
-          <div style={style}>
+          <div style={style} className={animationClass} {...hoverHandlers}>
             <ImageComponent component={enhancedComponent} />
           </div>
         )

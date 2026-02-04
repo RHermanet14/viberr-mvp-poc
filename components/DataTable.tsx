@@ -108,17 +108,22 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
       ? `${styleBorderWidth || '1px'} ${styleBorderStyle || 'solid'} ${styleBorderColor || theme?.borderColor || '#e5e7eb'}`
       : `1px solid ${theme?.borderColor || '#e5e7eb'}`)
   
+  // Determine if backgroundColor was explicitly set
+  const hasExplicitBgColor = component.style?.backgroundColor !== undefined
+  const hasExplicitBgImage = component.style?.backgroundImage !== undefined
+
   const tableStyle = {
     border: borderValue,
     borderRadius: component.style?.borderRadius || '0.5rem',
     backgroundColor: component.style?.backgroundColor || theme?.cardBackgroundColor,
-    backgroundImage: component.style?.backgroundImage,
     backgroundSize: component.style?.backgroundSize || 'cover',
     backgroundPosition: component.style?.backgroundPosition || 'center',
     backgroundRepeat: component.style?.backgroundRepeat || 'no-repeat',
     boxShadow: component.style?.boxShadow,
     transition: component.style?.boxShadow ? 'box-shadow 0.3s ease' : undefined,
     ...otherStyles,
+    // If backgroundColor is set but backgroundImage is not, clear gradient
+    backgroundImage: hasExplicitBgColor && !hasExplicitBgImage ? 'none' : component.style?.backgroundImage,
   }
   
   // Theme-aware colors - use component styles first, then theme colors (no mode-based defaults)
@@ -127,6 +132,11 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
   const rowHoverColor = component.style?.rowHoverColor || theme?.cardBackgroundColor
   const textColor = component.style?.textColor || theme?.textColor
   const cardStyle = component.style?.cardStyle === true
+  
+  // New table-specific style properties
+  const cellPadding = component.style?.cellPadding
+  const rowStripeColor = component.style?.rowStripeColor
+  const dividerColor = component.style?.dividerColor || theme?.borderColor || '#e5e7eb'
 
   // Calculate max height - use component style maxHeight if provided, otherwise use viewport-based default
   const maxHeight = component.style?.maxHeight 
@@ -180,8 +190,9 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
                 {columns.map((col: string) => (
                   <th 
                     key={col} 
-                    className="px-4 py-2 text-left font-semibold"
+                    className="text-left font-semibold"
                   style={{ 
+                    padding: cellPadding || '0.5rem 1rem',
                     ...(headerTextColor && { color: headerTextColor }),
                     ...(component.style?.fontSize ? { fontSize: component.style.fontSize } : {}),
                     ...(headerBg && { backgroundColor: headerBg }),
@@ -198,8 +209,8 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
                   key={`${chunkIdx}-${idx}`} 
                   style={{ 
                     ...(rowHoverColor && { '--hover-bg': rowHoverColor }),
-                    borderTop: `1px solid ${theme?.borderColor || '#e5e7eb'}`,
-                    backgroundColor: 'transparent',
+                    borderTop: `1px solid ${dividerColor}`,
+                    backgroundColor: rowStripeColor && idx % 2 === 1 ? rowStripeColor : 'transparent',
                     ...(textColor && { color: textColor }),
                   } as React.CSSProperties}
                   onMouseEnter={(e) => {
@@ -216,7 +227,9 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
                     }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = ''
+                    // Restore stripe color if applicable, otherwise transparent
+                    const isStripedRow = rowStripeColor && idx % 2 === 1
+                    e.currentTarget.style.backgroundColor = isStripedRow ? rowStripeColor : 'transparent'
                     // Reset text color if needed
                     if (textColor) {
                       Array.from(e.currentTarget.children).forEach((cell: any) => {
@@ -234,8 +247,8 @@ export function DataTable({ component, filters, theme }: DataTableProps) {
                     return (
                       <td 
                         key={col} 
-                        className="px-4 py-2"
                         style={{
+                          padding: cellPadding || '0.5rem 1rem',
                           ...(textColor && !isImage && { color: textColor }),
                           ...(component.style?.fontSize && !isImage && { fontSize: component.style?.fontSize }),
                           backgroundColor: 'transparent',

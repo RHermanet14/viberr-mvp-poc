@@ -25,3 +25,89 @@ body {
     )
     rgb(var(--background-start-rgb));
 }
+
+/* =============================================
+   Component Animation Presets
+   ============================================= */
+
+/* Float - gentle up/down floating */
+@keyframes viberr-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float {
+  animation: viberr-float 3s ease-in-out infinite;
+}
+
+/* Pulse - subtle scale pulse */
+@keyframes viberr-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+.animate-pulse-subtle {
+  animation: viberr-pulse 2s ease-in-out infinite;
+}
+
+/* Glow - pulsing box-shadow glow */
+@keyframes viberr-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.5), 0 0 20px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.8), 0 0 40px rgba(59, 130, 246, 0.5); }
+}
+.animate-glow {
+  animation: viberr-glow 2s ease-in-out infinite;
+}
+
+/* Shimmer - gradient shimmer effect */
+@keyframes viberr-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: viberr-shimmer 2s linear infinite;
+}
+
+/* Bounce - bouncy entrance */
+@keyframes viberr-bounce {
+  0% { transform: scale(0.9); opacity: 0; }
+  50% { transform: scale(1.05); }
+  70% { transform: scale(0.98); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-bounce-in {
+  animation: viberr-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+/* Fade In */
+@keyframes viberr-fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.animate-fadeIn {
+  animation: viberr-fadeIn 0.5s ease-out forwards;
+}
+
+/* Slide Up */
+@keyframes viberr-slideUp {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-slideUp {
+  animation: viberr-slideUp 0.5s ease-out forwards;
+}
+
+/* Tilt - subtle 3D tilt effect (continuous) */
+@keyframes viberr-tilt {
+  0%, 100% { transform: perspective(1000px) rotateX(0deg) rotateY(0deg); }
+  25% { transform: perspective(1000px) rotateX(2deg) rotateY(-2deg); }
+  75% { transform: perspective(1000px) rotateX(-2deg) rotateY(2deg); }
+}
+.animate-tilt {
+  animation: viberr-tilt 4s ease-in-out infinite;
+}

@@ -26,85 +26,92 @@ async function analyzeImageStyle(imageBase64: string): Promise<ImageColorAnalysi
   }
 }
 
-// Optimized system prompt for Claude 4.5 Haiku
-const SYSTEM_PROMPT = `You are a dashboard design system. Transform user requests into JSON operations.
-
-RESPONSE FORMAT: {"operations":[...]} — pure JSON, no markdown or text.
+// Optimized system prompt
+const SYSTEM_PROMPT = `Dashboard design system. Transform requests into JSON operations.
+RESPONSE: {"operations":[...]} — pure JSON only.
 
 ## OPERATIONS
-
-| Operation | Format | Use Case |
-|-----------|--------|----------|
-| set_style | {"op":"set_style","path":"PATH","value":"VAL"} | Change colors, fonts, sizes |
-| update | {"op":"update","path":"PATH","value":"VAL"} | Change layout, filters, props |
-| add_component | {"op":"add_component","component":{...}} | Add new components |
-| remove_component | {"op":"remove_component","id":"ID"} | Delete components |
-| reorder_component | {"op":"reorder_component","id":"ID","newIndex":N} | Move component position |
-| replace_component | {"op":"replace_component","id":"ID","component":{...}} | Swap component type |
+set_style: {"op":"set_style","path":"PATH","value":"VAL"} — colors, fonts, sizes
+update: {"op":"update","path":"PATH","value":"VAL"} — layout, filters, props, styleHover
+add_component: {"op":"add_component","component":{...}}
+remove_component: {"op":"remove_component","id":"ID"}
+reorder_component: {"op":"reorder_component","id":"ID","newIndex":N}
+replace_component: {"op":"replace_component","id":"ID","component":{...}}
 
 ## PATHS
-
 Theme: theme/mode, theme/backgroundColor, theme/backgroundImage, theme/primaryColor, theme/textColor, theme/fontFamily
-Layout: layout/columns (grid columns for component arrangement), layout/gap
+Layout: layout/columns, layout/gap
 Filters: filters/sortBy, filters/sortOrder, filters/limit
-Component styles: components[id=ID]/style/PROPERTY
+Styles: components[id=ID]/style/PROPERTY (any CSS camelCase)
+Hover: components[id=ID]/styleHover (object with transform, boxShadow, etc.)
+Chart internals: components[id=ID]/props/chartTheme/PROPERTY
 
-## COMPONENT EXAMPLES (COPY EXACTLY)
+## DATA
+/api/data: id, title, category, price, date
+/api/data/summary: month, total, count, avgPrice
 
-TEXT - props.content is THE ACTUAL TEXT STRING:
-{"op":"add_component","component":{"id":"text1","type":"text","props":{"content":"Sales Dashboard","heading":true},"style":{"fontSize":"2rem"}}}
+## COMPONENTS
+TEXT: {"op":"add_component","component":{"id":"text1","type":"text","props":{"content":"ACTUAL TEXT HERE","heading":true},"style":{"fontSize":"2rem"}}}
+PIE (by category): {"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
+BAR (by category): {"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
+LINE (time series): {"op":"add_component","component":{"id":"chart1","type":"line_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"height":"400px"}}}
+KPI: {"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{}}}
+TABLE: {"op":"add_component","component":{"id":"table1","type":"table","props":{"dataSource":"/api/data","columns":["id","title","category","price","date"],"dataColumns":1},"style":{}}}
 
-PIE CHART BY CATEGORY - MUST use xField:"category" and dataSource:"/api/data":
-{"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
+## DEEP STYLING
 
-BAR CHART BY CATEGORY:
-{"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
+chartTheme (charts): gridColor, gridOpacity, axisColor, tickColor, tickFontSize, tooltipBg, tooltipTextColor, tooltipBorderColor, legendTextColor, seriesColors[]
+{"op":"update","path":"components[id=chart1]/props/chartTheme","value":{"gridColor":"#333","tooltipBg":"#222","seriesColors":["#ff6384","#36a2eb"]}}
 
-LINE CHART (time series):
-{"op":"add_component","component":{"id":"chart1","type":"line_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"height":"400px"}}}
+KPI style: labelFontSize, labelFontWeight, valueFontSize, valueFontWeight, labelColor, valueColor
 
-KPI:
-{"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{}}}
+Table style: headerBackgroundColor, headerTextColor, rowStripeColor, dividerColor, cellPadding, rowHoverColor
 
-TABLE (dataColumns splits data into side-by-side tables):
-{"op":"add_component","component":{"id":"table1","type":"table","props":{"dataSource":"/api/data","columns":["id","title","category","price","date"],"dataColumns":1},"style":{}}}
+Universal: Any CSS in camelCase — backgroundColor, borderRadius, boxShadow, backdropFilter, transform, opacity, etc.
 
-## DATA SOURCES
-- /api/data: Raw items with fields: id, title, category, price, date
-- /api/data/summary: Monthly aggregates with: month, total, count, avgPrice
+## ANIMATIONS (style.animate)
+Presets: float, pulse, glow, shimmer, bounce, fadeIn, slideUp, tilt, none
+Optional: animationDuration, animationDelay
+{"op":"set_style","path":"components[id=kpi1]/style/animate","value":"float"}
 
-## GRADIENTS (use theme/backgroundImage or component style/backgroundImage)
-- Sunset: "linear-gradient(135deg, #f093fb 0%, #f5576c 50%, #ff9966 100%)"
-- Ocean: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-- Forest: "linear-gradient(135deg, #134e5e 0%, #71b280 100%)"
+## HOVER (styleHover)
+{"op":"update","path":"components[id=kpi1]/styleHover","value":{"transform":"translateY(-4px)","boxShadow":"0 12px 24px rgba(0,0,0,0.2)"}}
 
-## BRAND STYLES
-| Brand | Mode | Background | Primary | Text |
-|-------|------|------------|---------|------|
-| Netflix | dark | #141414 | #e50914 | #ffffff |
-| Spotify | dark | #121212 | #1db954 | #ffffff |
-| Uber Eats | light | #ffffff | #06c167 | #142328 |
-| GitHub | dark | #0d1117 | #238636 | #c9d1d9 |
+## VIBES & AESTHETICS
+For vibe/mood/aesthetic requests, creatively combine: theme colors + fontFamily + animations + styleHover + gradients.
+Think holistically — match the feeling. Use individual set_style ops for theme properties:
 
-## DISAMBIGUATION - "COLUMNS" HAS 3 MEANINGS
+"space vibe" → dark blue bg, light blue primary, sci-fi font, float animations, glow hover
+{"op":"set_style","path":"theme/mode","value":"dark"}
+{"op":"set_style","path":"theme/backgroundColor","value":"#0a0a1a"}
+{"op":"set_style","path":"theme/primaryColor","value":"#60a5fa"}
+{"op":"set_style","path":"theme/textColor","value":"#e0e7ff"}
+{"op":"set_style","path":"theme/fontFamily","value":"Orbitron"}
++ set animate:"float" on KPIs, animate:"glow" on charts, add styleHover with glow boxShadow
 
-1. **Layout columns** ("two columns", "3 column layout") = layout/columns (grid arrangement of components)
-2. **Table data columns** ("table in 2 columns", "split table into 3 columns") = props.dataColumns (splits rows into side-by-side tables)
-3. **Table attribute columns** ("only show id and price", "hide category column") = props.columns array
+"gothic/elegant" → near-black bg, deep red primary, serif font (Cinzel), fadeIn + pulse, lift+shadow hover
 
-EXAMPLES:
-- "two columns" → {"op":"update","path":"layout/columns","value":2}
-- "table in 2 columns" → {"op":"update","path":"components[id=table1]/props/dataColumns","value":2}
-- "split the table into 3 columns" → {"op":"update","path":"components[id=table1]/props/dataColumns","value":3}
-- "only show title and price" → {"op":"update","path":"components[id=table1]/props/columns","value":["title","price"]}
+"futuristic/cyber" → dark slate bg, cyan primary (#22d3ee), tech font (Rajdhani), shimmer + glow, neon border hover
 
-## CRITICAL RULES
-1. TEXT content: props.content MUST be the exact text string user wants displayed
-2. PIE/BAR by category: MUST use dataSource:"/api/data", xField:"category"
-3. For KPIs: never set height, always include dataSource="/api/data"
-4. For images: only use URLs explicitly provided by user
-5. For "at top": add component, then reorder to newIndex:0
-6. Only reference component IDs that exist in the schema`
+"playful/fun" → warm bright bg (#fef3c7), orange primary, rounded font (Fredoka), bounce animations, scale-up hover
+
+Be creative with ANY aesthetic — interpret the mood and apply cohesive theme + font + animation + hover styles.
+
+## COLUMNS DISAMBIGUATION
+"two columns" (layout) → {"op":"update","path":"layout/columns","value":2}
+"table in 2 columns" (split data) → {"op":"update","path":"components[id=table1]/props/dataColumns","value":2}
+"show only title, price" (fields) → {"op":"update","path":"components[id=table1]/props/columns","value":["title","price"]}
+
+## RULES
+1. TEXT props.content = exact text string
+2. PIE/BAR by category: dataSource="/api/data", xField:"category"
+3. KPIs: no height, always dataSource="/api/data"
+4. Images: only user-provided URLs
+5. "at top": add_component then reorder to newIndex:0
+6. Only reference existing component IDs
+7. Vibe requests: apply theme AND style each component
+8. AVOID: position:fixed/absolute, zIndex>100
+9. UNIQUE IDs: When adding multiple components, use unique IDs (pie1, pie2, bar1, bar2, kpi1, kpi2, etc.)`
 
 export async function generateDesignOperations(
   prompt: string,
@@ -158,6 +165,12 @@ export async function generateDesignOperations(
   let userPrompt = `Current schema: ${schemaJson}
 
 User request: ${processedPrompt}`
+
+  // Add existing component IDs to help AI generate unique IDs
+  const existingIds = currentSchema.components.map(c => c.id)
+  if (existingIds.length > 0) {
+    userPrompt += `\n\nExisting component IDs (use different IDs for new components): ${existingIds.join(', ')}`
+  }
     
   // Add URL placeholder mapping
     if (urlPlaceholderMap.size > 0) {

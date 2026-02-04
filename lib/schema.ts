@@ -1,7 +1,37 @@
+// Animation presets for components
+export type AnimationPreset = 
+  | 'float'      // Gentle up/down floating
+  | 'pulse'      // Subtle scale pulse
+  | 'glow'       // Pulsing box-shadow glow
+  | 'shimmer'    // Gradient shimmer effect
+  | 'bounce'     // Bouncy entrance
+  | 'fadeIn'     // Fade in on load
+  | 'slideUp'    // Slide up entrance
+  | 'tilt'       // Subtle 3D tilt on hover-like effect
+  | 'none'       // No animation
+
+// Chart theme for styling Recharts internals (axis, grid, tooltip, legend)
+export interface ChartTheme {
+  gridColor?: string
+  gridOpacity?: number
+  axisColor?: string
+  tickColor?: string
+  tickFontSize?: string | number
+  tickFontFamily?: string
+  tooltipBg?: string
+  tooltipTextColor?: string
+  tooltipBorderColor?: string
+  tooltipBorderRadius?: string | number
+  legendTextColor?: string
+  legendFontSize?: string | number
+  cursorColor?: string
+  seriesColors?: string[] // Override default series colors
+}
+
 export interface Component {
   id: string
   type: 'table' | 'chart' | 'kpi' | 'text' | 'image' | 'pie_chart' | 'bar_chart' | 'line_chart' | 'area_chart' | 'scatter_chart' | 'radar_chart' | 'histogram' | 'composed_chart'
-  props: Record<string, any>
+  props: Record<string, any> & { chartTheme?: ChartTheme }
   style?: {
     // Colors
     color?: string
@@ -85,6 +115,32 @@ export interface Component {
     userSelect?: 'none' | 'auto' | 'text' | 'all'
     outline?: string
     outlineOffset?: string | number
+    // KPI-specific styling
+    labelFontSize?: string | number
+    valueFontSize?: string | number
+    labelFontWeight?: string | number
+    valueFontWeight?: string | number
+    // Table-specific styling
+    cellPadding?: string | number
+    rowStripeColor?: string
+    dividerColor?: string
+    // Animation preset
+    animate?: AnimationPreset
+    animationDuration?: string
+    animationDelay?: string
+    // Index signature for extensible styles (any CSS property)
+    [key: string]: any
+  }
+  // Hover styles - applied on mouse enter, reverted on mouse leave
+  styleHover?: {
+    transform?: string
+    boxShadow?: string
+    backgroundColor?: string
+    borderColor?: string
+    opacity?: number
+    filter?: string
+    scale?: number
+    [key: string]: any
   }
   position?: { x: number; y: number; width: number; height: number }
 }
@@ -274,6 +330,50 @@ export type Operation =
   | { op: 'move_component'; id: string; position: { x: number; y: number; width?: number; height?: number } }
   | { op: 'replace_component'; id: string; component: Component }
   | { op: 'reorder_component'; id: string; newIndex: number }
+
+// Map animation preset to CSS class name
+export function getAnimationClass(animate: AnimationPreset | undefined): string {
+  if (!animate || animate === 'none') return ''
+  
+  const classMap: Record<AnimationPreset, string> = {
+    float: 'animate-float',
+    pulse: 'animate-pulse-subtle',
+    glow: 'animate-glow',
+    shimmer: 'animate-shimmer',
+    bounce: 'animate-bounce-in',
+    fadeIn: 'animate-fadeIn',
+    slideUp: 'animate-slideUp',
+    tilt: 'animate-tilt',
+    none: '',
+  }
+  
+  return classMap[animate] || ''
+}
+
+// Minimal guardrails: sanitize style objects to prevent layout-breaking CSS
+export function sanitizeStyle(style: Record<string, any> | undefined): Record<string, any> | undefined {
+  if (!style) return style
+  
+  const sanitized = { ...style }
+  
+  // Block position values that can break layout
+  if (sanitized.position === 'fixed' || sanitized.position === 'absolute') {
+    delete sanitized.position
+  }
+  
+  // Limit zIndex to prevent components from escaping their container
+  if (typeof sanitized.zIndex === 'number' && sanitized.zIndex > 100) {
+    sanitized.zIndex = 100
+  }
+  if (typeof sanitized.zIndex === 'string') {
+    const parsed = parseInt(sanitized.zIndex, 10)
+    if (!isNaN(parsed) && parsed > 100) {
+      sanitized.zIndex = 100
+    }
+  }
+  
+  return sanitized
+}
 
 export function applyOperations(schema: DesignSchema, operations: Operation[]): { 
   schema: DesignSchema
