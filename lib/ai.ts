@@ -95,6 +95,10 @@ Think holistically — match the feeling. Use individual set_style ops for theme
 
 "playful/fun" → warm bright bg (#fef3c7), orange primary, rounded font (Fredoka), bounce animations, scale-up hover
 
+"minimalist" → light/white bg, neutral gray primary (#6b7280), sans-serif font (Inter), no animations (animate:"none"), subtle hover (slight opacity/color shift)
+
+"minimal/clean" → same as minimalist — reduce visual noise, use whitespace, remove gradients, set all animations to "none"
+
 Be creative with ANY aesthetic — interpret the mood and apply cohesive theme + font + animation + hover styles.
 
 ## GRADIENTS — WHEN & HOW
@@ -289,7 +293,7 @@ User request: ${processedPrompt}`
   const message = await Promise.race([
     anthropic.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 2000,
+      max_tokens: 4000,
       system: SYSTEM_PROMPT,
         messages: [
         { role: 'user', content: userPrompt },

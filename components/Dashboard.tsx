@@ -84,10 +84,16 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [showControls, setShowControls] = useState(true)
   const [showHelp, setShowHelp] = useState(false)
+  const [userPresets, setUserPresets] = useState<Array<{ id: string; name: string }>>([])
+  const [showSavePresetModal, setShowSavePresetModal] = useState(false)
+  const [showManagePresetsModal, setShowManagePresetsModal] = useState(false)
+  const [newPresetName, setNewPresetName] = useState('')
+  const [savingPreset, setSavingPreset] = useState(false)
 
   useEffect(() => {
     if (status === 'authenticated') {
       loadSchema()
+      loadUserPresets()
     } else if (status === 'unauthenticated') {
       setLoading(false)
     }
@@ -117,6 +123,100 @@ export function Dashboard() {
       setLoading(false)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadUserPresets = async () => {
+    try {
+      const res = await fetch('/api/presets')
+      if (res.ok) {
+        const data = await res.json()
+        setUserPresets(data.presets || [])
+      }
+    } catch {
+      // Silently fail - presets are not critical
+    }
+  }
+
+  const handleSavePreset = async () => {
+    if (!schema || !newPresetName.trim()) return
+    
+    setSavingPreset(true)
+    try {
+      const res = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newPresetName.trim(), schema }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setUserPresets([data.preset, ...userPresets])
+        setNewPresetName('')
+        setShowSavePresetModal(false)
+      } else {
+        const errorData = await res.json()
+        setError(errorData.error || 'Failed to save preset')
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to save preset')
+    } finally {
+      setSavingPreset(false)
+    }
+  }
+
+  const handleLoadUserPreset = async (presetId: string) => {
+    if (!schema) return
+
+    setError(null)
+    const currentSchemaBackup = JSON.parse(JSON.stringify(schema))
+    setPreviousSchema(currentSchemaBackup)
+
+    try {
+      const res = await fetch(`/api/presets/${presetId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const presetSchema = data.preset.schema
+
+        // Save the preset schema to the server as the current schema
+        const saveRes = await fetch('/api/schema', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(presetSchema),
+        })
+
+        if (saveRes.ok) {
+          setSchema(presetSchema)
+        } else {
+          const errorData = await saveRes.json()
+          setError(errorData.error || 'Failed to apply preset')
+          setSchema(currentSchemaBackup)
+        }
+      } else {
+        const errorData = await res.json()
+        setError(errorData.error || 'Failed to load preset')
+        setSchema(currentSchemaBackup)
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to load preset')
+      setSchema(currentSchemaBackup)
+    }
+  }
+
+  const handleDeletePreset = async (presetId: string) => {
+    try {
+      const res = await fetch(`/api/presets/${presetId}`, {
+        method: 'DELETE',
+      })
+
+      if (res.ok) {
+        setUserPresets(userPresets.filter(p => p.id !== presetId))
+      } else {
+        const errorData = await res.json()
+        setError(errorData.error || 'Failed to delete preset')
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to delete preset')
     }
   }
 
@@ -642,6 +742,82 @@ export function Dashboard() {
                   >
                     Dark Blank
                   </button>
+                  
+                  {/* Separator */}
+                  <span style={{ color: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)' }}>|</span>
+                  
+                  {/* User Presets */}
+                  {userPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      onClick={() => handleLoadUserPreset(preset.id)}
+                      className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap"
+                      style={{
+                        backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
+                        color: getTextColor(),
+                        border: `1px solid ${schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.12)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)'
+                      }}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                  
+                  {/* Save Preset Button */}
+                  <button
+                    onClick={() => setShowSavePresetModal(true)}
+                    className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap flex items-center gap-1"
+                    style={{
+                      backgroundColor: 'transparent',
+                      color: schema.theme.primaryColor || '#3b82f6',
+                      border: `1px solid ${schema.theme.primaryColor || '#3b82f6'}`,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = schema.theme.primaryColor || '#3b82f6'
+                      e.currentTarget.style.color = '#ffffff'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                      e.currentTarget.style.color = schema.theme.primaryColor || '#3b82f6'
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                      <polyline points="17 21 17 13 7 13 7 21"/>
+                      <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    Save
+                  </button>
+                  
+                  {/* Manage Presets Button */}
+                  {userPresets.length > 0 && (
+                    <button
+                      onClick={() => setShowManagePresetsModal(true)}
+                      className="px-3 py-1.5 rounded font-medium transition-colors text-sm whitespace-nowrap flex items-center gap-1"
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                        border: `1px solid ${schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'}`,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent'
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                      </svg>
+                      Manage
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -798,6 +974,170 @@ export function Dashboard() {
                   }}
                 >
                   Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Preset Modal */}
+      {showSavePresetModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowSavePresetModal(false)}
+        >
+          <div
+            className="rounded-lg shadow-xl max-w-md w-full"
+            style={{
+              backgroundColor: getBackgroundColor(),
+              color: getTextColor(),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">Save Preset</h2>
+                <button
+                  onClick={() => setShowSavePresetModal(false)}
+                  className="text-2xl font-bold px-2 hover:opacity-70"
+                  style={{ color: getTextColor() }}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <p className="text-sm mb-4" style={{ opacity: 0.7 }}>
+                Save your current dashboard as a custom preset that you can load later.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Preset Name</label>
+                <input
+                  type="text"
+                  value={newPresetName}
+                  onChange={(e) => setNewPresetName(e.target.value)}
+                  placeholder="e.g., My Dark Theme"
+                  className="w-full px-3 py-2 rounded-lg border"
+                  style={{
+                    backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                    borderColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
+                    color: getTextColor(),
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newPresetName.trim()) {
+                      handleSavePreset()
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowSavePresetModal(false)}
+                  className="px-4 py-2 rounded-lg font-medium transition-colors"
+                  style={{
+                    backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                    color: getTextColor(),
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSavePreset}
+                  disabled={!newPresetName.trim() || savingPreset}
+                  className="px-4 py-2 rounded-lg font-medium transition-colors"
+                  style={{
+                    backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                    color: '#ffffff',
+                    opacity: !newPresetName.trim() || savingPreset ? 0.5 : 1,
+                  }}
+                >
+                  {savingPreset ? 'Saving...' : 'Save Preset'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Presets Modal */}
+      {showManagePresetsModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowManagePresetsModal(false)}
+        >
+          <div
+            className="rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto"
+            style={{
+              backgroundColor: getBackgroundColor(),
+              color: getTextColor(),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">Manage Presets</h2>
+                <button
+                  onClick={() => setShowManagePresetsModal(false)}
+                  className="text-2xl font-bold px-2 hover:opacity-70"
+                  style={{ color: getTextColor() }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {userPresets.length === 0 ? (
+                <p className="text-center py-8" style={{ opacity: 0.6 }}>
+                  No saved presets yet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {userPresets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="flex items-center justify-between p-3 rounded-lg"
+                      style={{
+                        backgroundColor: schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                        border: `1px solid ${schema.theme.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+                      }}
+                    >
+                      <span className="font-medium">{preset.name}</span>
+                      <button
+                        onClick={() => handleDeletePreset(preset.id)}
+                        className="px-3 py-1 rounded text-sm font-medium transition-colors"
+                        style={{
+                          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#ef4444'
+                          e.currentTarget.style.color = '#ffffff'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                          e.currentTarget.style.color = '#ef4444'
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-6 text-center">
+                <button
+                  onClick={() => setShowManagePresetsModal(false)}
+                  className="px-6 py-2 rounded-lg font-medium transition-colors"
+                  style={{
+                    backgroundColor: schema.theme.primaryColor || '#3b82f6',
+                    color: '#ffffff',
+                  }}
+                >
+                  Done
                 </button>
               </div>
             </div>
