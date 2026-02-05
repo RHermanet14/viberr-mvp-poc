@@ -274,8 +274,23 @@ User request: ${processedPrompt}`
   }
     
   // Add URL placeholder mapping
-    if (urlPlaceholderMap.size > 0) {
-    userPrompt += `\n\nImage placeholders: ${Array.from(urlPlaceholderMap.keys()).join(', ')} (use these in src field)`
+  if (urlPlaceholderMap.size > 0) {
+    userPrompt += `\n\nImage URL(s) detected: ${Array.from(urlPlaceholderMap.keys()).join(', ')}`
+    userPrompt += `\nCreate add_component operations for EACH image URL using these placeholders in the src field.`
+    
+    // Find next available image ID
+    const existingImageIds = currentSchema.components
+      .filter(c => c.id.startsWith('img'))
+      .map(c => {
+        const match = c.id.match(/^img(\d+)$/)
+        return match ? parseInt(match[1], 10) : 0
+      })
+    const maxExistingId = existingImageIds.length > 0 ? Math.max(...existingImageIds) : 0
+    
+    Array.from(urlPlaceholderMap.entries()).forEach(([placeholder, url], index) => {
+      const newImageId = maxExistingId + index + 1
+      userPrompt += `\nImage ${index + 1}: id="img${newImageId}", src="${placeholder}"`
+    })
   }
 
   // Handle uploaded images
