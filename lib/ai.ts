@@ -331,7 +331,18 @@ User request: ${processedPrompt}`
     userPrompt += `\nFor text: set color`
   }
 
-  userPrompt += `\n\nReturn ONLY valid JSON: {"operations":[...]}`
+  // Detect natural gradient concepts (rainbow, sunset, aurora, etc.) to trigger gradient rules
+  const naturalGradientConcepts = ['rainbow', 'sunset', 'sunrise', 'aurora', 'northern lights', 'ocean', 'fire', 'lava', 'sky']
+  const detectedGradientConcept = naturalGradientConcepts.find(concept => 
+    processedPrompt.toLowerCase().includes(concept)
+  )
+  if (detectedGradientConcept) {
+    userPrompt += `\n\nNATURAL GRADIENT CONCEPT DETECTED: "${detectedGradientConcept}"`
+    userPrompt += `\nThis is a NATURAL GRADIENT CONCEPT per the system prompt rules.`
+    userPrompt += `\nYou MUST apply gradients to: theme/backgroundImage AND component backgrounds.`
+    userPrompt += `\nUse linear-gradient or radial-gradient with colors authentic to ${detectedGradientConcept}.`
+    userPrompt += `\nVary gradient angles per component for visual interest.`
+  }
 
   // Use timeout for API calls (design spec: cancel LLM after 10s)
   const timeoutMs = 10000
