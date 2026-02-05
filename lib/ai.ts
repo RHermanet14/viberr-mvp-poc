@@ -344,6 +344,8 @@ User request: ${processedPrompt}`
     userPrompt += `\nVary gradient angles per component for visual interest.`
   }
 
+  userPrompt += `\n\nReturn ONLY valid JSON: {"operations":[...]}`
+
   // Use timeout for API calls (design spec: cancel LLM after 10s)
   const timeoutMs = 10000
 
