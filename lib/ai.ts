@@ -55,6 +55,8 @@ TEXT: {"op":"add_component","component":{"id":"text1","type":"text","props":{"co
 PIE (by category): {"op":"add_component","component":{"id":"pie1","type":"pie_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
 BAR (by category): {"op":"add_component","component":{"id":"bar1","type":"bar_chart","props":{"dataSource":"/api/data","xField":"category","aggregateFunction":"count"},"style":{"height":"400px"}}}
 LINE (time series): {"op":"add_component","component":{"id":"chart1","type":"line_chart","props":{"dataSource":"/api/data/summary","xField":"month","yField":"total"},"style":{"height":"400px"}}}
+SCATTER (x vs y): {"op":"add_component","component":{"id":"scatter1","type":"scatter_chart","props":{"dataSource":"/api/data","xField":"price","yField":"id"},"style":{"height":"400px"}}}
+RADAR (multi-metric): {"op":"add_component","component":{"id":"radar1","type":"radar_chart","props":{"dataSource":"/api/data/summary"},"style":{"height":"400px"}}}
 KPI: {"op":"add_component","component":{"id":"kpi1","type":"kpi","props":{"dataSource":"/api/data","calculation":"count","label":"Total Items"},"style":{}}}
 TABLE: {"op":"add_component","component":{"id":"table1","type":"table","props":{"dataSource":"/api/data","columns":["id","title","category","price","date"],"dataColumns":1},"style":{}}}
 
@@ -238,6 +240,39 @@ User request: ${processedPrompt}`
     userPrompt += `\n\nExisting component IDs (use different IDs for new components): ${existingIds.join(', ')}`
   }
     
+  // Detect targeted component requests (e.g., "make the table red", "chart text blue", "kpi text red")
+  const componentTypeMatches = processedPrompt.toLowerCase().match(/\b(the\s+)?(table|chart|kpi|text|image|pie|bar|line|area|scatter|radar)\b/)
+  if (componentTypeMatches) {
+    // Find actual component ID matching the type mentioned
+    const mentionedType = componentTypeMatches[2]
+    const typeMapping: Record<string, string[]> = {
+      'table': ['table'],
+      'chart': ['chart', 'pie_chart', 'bar_chart', 'line_chart', 'area_chart', 'scatter_chart', 'radar_chart'],
+      'pie': ['pie_chart'],
+      'bar': ['bar_chart'],
+      'line': ['line_chart'],
+      'area': ['area_chart'],
+      'scatter': ['scatter_chart'],
+      'radar': ['radar_chart'],
+      'kpi': ['kpi'],
+      'text': ['text'],
+      'image': ['image']
+    }
+    const targetTypes = typeMapping[mentionedType] || [mentionedType]
+    const targetIds = currentSchema.components
+      .filter(c => targetTypes.includes(c.type) || c.id.toLowerCase().includes(mentionedType))
+      .map(c => c.id)
+    
+    if (targetIds.length > 0) {
+      userPrompt += `\n\nTARGETED REQUEST: Only affect component(s): ${targetIds.join(', ')}`
+      
+      // Add KPI-specific styling guidance
+      if (mentionedType === 'kpi') {
+        userPrompt += `\nIMPORTANT: For KPI text styling, use labelColor and valueColor properties. Do NOT use 'color'.`
+      }
+    }
+  }
+    
   // Add URL placeholder mapping
     if (urlPlaceholderMap.size > 0) {
     userPrompt += `\n\nImage placeholders: ${Array.from(urlPlaceholderMap.keys()).join(', ')} (use these in src field)`
@@ -368,6 +403,18 @@ User request: ${processedPrompt}`
       }))
     }
 
+  // Helper: extract component ID from path like "components[id=kpi1]/style/color"
+  const extractComponentId = (path: string): string | null => {
+    const match = path.match(/\[id=([^\]]+)\]/)
+    return match ? match[1] : null
+  }
+  
+  // Helper: check if a component is a KPI by ID
+  const isKpiComponent = (id: string): boolean => {
+    const component = currentSchema.components.find(c => c.id === id)
+    return component?.type === 'kpi'
+  }
+
     for (const op of operations) {
     if (!op || typeof op !== 'object') continue
 
@@ -387,6 +434,16 @@ User request: ${processedPrompt}`
             {
             let path = String(op.path).replace(/\./g, '/')
               let value = op.value
+            
+            // Convert 'color' to 'labelColor' and 'valueColor' for KPIs
+            const componentId = extractComponentId(path)
+            if (componentId && isKpiComponent(componentId) && path.endsWith('/style/color')) {
+              const basePath = path.replace('/style/color', '')
+              validatedOperations.push({ op: 'set_style', path: `${basePath}/style/labelColor`, value })
+              validatedOperations.push({ op: 'set_style', path: `${basePath}/style/valueColor`, value })
+              break
+            }
+            
             if (['layout/columns', 'layout/gap', 'filters/limit'].includes(path)) {
               const coerced = coerceNumber(path, value)
               if (coerced === null) continue
@@ -401,6 +458,16 @@ User request: ${processedPrompt}`
           {
             let path = String(op.path).replace(/\./g, '/')
             let value = op.value
+            
+            // Convert 'color' to 'labelColor' and 'valueColor' for KPIs in update ops too
+            const componentId = extractComponentId(path)
+            if (componentId && isKpiComponent(componentId) && path.endsWith('/style/color')) {
+              const basePath = path.replace('/style/color', '')
+              validatedOperations.push({ op: 'update', path: `${basePath}/style/labelColor`, value })
+              validatedOperations.push({ op: 'update', path: `${basePath}/style/valueColor`, value })
+              break
+            }
+            
             if (['layout/columns', 'layout/gap', 'filters/limit'].includes(path)) {
               const coerced = coerceNumber(path, value)
               if (coerced === null) continue
@@ -504,8 +571,8 @@ User request: ${processedPrompt}`
     }
   }
 
-  // Auto-inject reorder operations when prompt says "at top" or "at beginning"
-  const wantsAtTop = /\b(at\s+(the\s+)?(top|beginning|start)|^add.*first)\b/i.test(prompt)
+  // Auto-inject reorder operations when prompt says "at top", "on top" or "at beginning"
+  const wantsAtTop = /\b((at|on)\s+(the\s+)?(top|beginning|start)|^add.*first)\b/i.test(prompt)
   if (wantsAtTop) {
     const addOps = validatedOperations.filter(op => op.op === 'add_component')
     const hasReorderForAdded = validatedOperations.some(op => 
